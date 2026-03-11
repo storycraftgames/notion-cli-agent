@@ -19,8 +19,9 @@ Export your token: export NOTION_TOKEN="ntn_xxx"
 
 ### 1. Discover workspace structure
 \`\`\`bash
-notion inspect ws                    # List all accessible databases
-notion inspect schema <db_id>        # Get database schema with property types
+notion inspect ws --compact          # List all accessible databases
+notion inspect ws --json             # Full raw inventory
+notion inspect schema <db_id> --llm  # Get database schema with valid values
 notion inspect context <db_id>       # Full context for working with a database
 \`\`\`
 
@@ -28,6 +29,7 @@ notion inspect context <db_id>       # Full context for working with a database
 \`\`\`bash
 notion search "keyword"              # Search pages and databases
 notion db query <db_id> --limit 10   # Query database entries
+notion db query <db_id> --limit 10 --json
 notion find "overdue tasks" -d <db_id>  # Smart natural language query
 \`\`\`
 
@@ -47,6 +49,7 @@ notion bulk update <db_id> --where "Status=Todo" --set "Status=In Progress" --ye
 \`\`\`bash
 notion page get <page_id>            # Get page properties
 notion page get <page_id> --content  # Include content blocks
+notion page get <page_id> --json     # Raw JSON
 notion ai summarize <page_id>        # Get concise summary
 \`\`\`
 
@@ -94,7 +97,7 @@ notion batch --llm --data '[
 
 - Default: Human-readable
 - --json or -j: Raw JSON (for parsing)
-- --llm: Optimized for LLM consumption
+- --llm: Supported on selected commands such as find, batch, and inspect schema
 
 ## Tips for AI Agents
 

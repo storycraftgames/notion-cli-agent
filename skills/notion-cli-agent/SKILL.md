@@ -29,25 +29,27 @@ If the file is missing, suggest the user run the **notion-onboarding** skill fir
 
 ## Agent Workflow
 
-1. **Load state** (above) or `notion inspect ws --llm` to discover databases
-2. **Understand schema** — `notion inspect context <db_id> --llm`
-3. **Query** with `--llm` for compact output
+1. **Load state** (above) or `notion inspect ws --compact` / `notion inspect ws --json` to discover databases
+2. **Understand schema** — `notion inspect context <db_id>` and `notion inspect schema <db_id> --llm`
+3. **Query** with `--json` or `--llm` only where the command supports it
 4. **Write** with `--dry-run` first on bulk/batch ops, then confirm with user
 
 ## Core Commands
 
 ### Discover
 ```bash
-notion inspect ws --llm                         # all databases
+notion inspect ws --compact                     # all databases, names + ids
+notion inspect ws --json                        # full raw inventory
 notion inspect schema <db_id> --llm             # property types + valid values
-notion inspect context <db_id> --llm            # full LLM-friendly context
+notion inspect context <db_id>                  # workflow context + examples
 notion ai prompt <db_id>                        # DB-specific agent instructions
 ```
 
 ### Query
 ```bash
 notion search "keyword" --limit 10
-notion db query <db_id> --limit 20 --llm
+notion db query <db_id> --limit 20
+notion db query <db_id> --limit 20 --json
 notion find "overdue tasks unassigned" -d <db_id> --llm   # natural language
 notion find "high priority" -d <db_id> --explain          # preview filter, don't run
 ```
@@ -55,7 +57,8 @@ notion find "high priority" -d <db_id> --explain          # preview filter, don'
 ### Read pages
 ```bash
 notion page get <page_id>                       # properties
-notion page get <page_id> --content --llm       # + content blocks
+notion page get <page_id> --content             # + content blocks
+notion page get <page_id> --json                # raw JSON
 notion ai summarize <page_id>                   # concise summary
 notion ai extract <page_id> --schema "email,phone,date"
 ```
@@ -95,7 +98,7 @@ notion validate check <db_id> --check-dates --check-stale 30
 
 | Flag | Use for |
 |------|---------|
-| `--llm` | Compact, structured output for agents |
+| `--llm` | Compact, structured output for agents on supported commands (`find`, `batch`, `inspect schema`) |
 | `--json` / `-j` | Raw JSON for parsing |
 | (default) | Human-readable |
 

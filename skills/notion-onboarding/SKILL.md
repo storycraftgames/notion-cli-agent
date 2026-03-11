@@ -28,7 +28,8 @@ Confirm the integration is working. Note the workspace name.
 ## Step 2 — Discover all accessible databases
 
 ```bash
-notion inspect ws --llm
+notion inspect ws --compact
+notion inspect ws --json
 ```
 
 This lists all databases the integration can see. Present the list clearly to the user (name + ID).
@@ -54,7 +55,8 @@ Can you tell me:
 For each confirmed database, run:
 
 ```bash
-notion inspect context <db_id> --llm
+notion inspect context <db_id>
+notion inspect schema <db_id> --llm
 ```
 
 Extract from the output:
