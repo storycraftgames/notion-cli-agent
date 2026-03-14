@@ -16,7 +16,7 @@
  *   notion batch --file operations.json
  */
 
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { initClient } from './client.js';
 import { setGlobalDataSourceId } from './utils/database-resolver.js';
