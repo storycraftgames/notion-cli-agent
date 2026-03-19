@@ -73,6 +73,11 @@ export function registerDatabasesCommand(program: Command): void {
             process.exit(1);
           }
 
+          if (propTypes.length !== 0 && propTypes.length !== props.length) {
+            console.error('Error: --filter-prop-type must be provided either for all filter groups or for none');
+            process.exit(1);
+          }
+
           const filters = props.map((prop, i) =>
             parseFilter(prop, types[i], values[i], propTypes[i])
           );

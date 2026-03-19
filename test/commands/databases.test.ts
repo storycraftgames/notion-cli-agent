@@ -290,6 +290,25 @@ describe('Databases Command', () => {
       );
     });
 
+    it('should exit with error when --filter-prop-type count does not match filter group count', async () => {
+      await expect(
+        program.parseAsync([
+          'node', 'test', 'database', 'query', 'db-123',
+          '--filter-prop', 'Title',
+          '--filter-type', 'contains',
+          '--filter-value', 'foo',
+          '--filter-prop', 'Status',
+          '--filter-type', 'equals',
+          '--filter-value', 'Done',
+          '--filter-prop-type', 'status',
+        ])
+      ).rejects.toThrow('process.exit(1)');
+
+      expect(console.error).toHaveBeenCalledWith(
+        'Error: --filter-prop-type must be provided either for all filter groups or for none'
+      );
+    });
+
     it('should produce plain filter object for single filter group (regression)', async () => {
       const result = createPaginatedResult([mockPage]);
       mockClient.post.mockResolvedValue(result);
