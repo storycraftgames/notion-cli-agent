@@ -7,9 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-21
+
+### Added
+
+- **Multi-data-source database support** — Databases with multiple data sources (merged databases) now work transparently. The new `database-resolver.ts` auto-detects multi-DS databases and routes requests to `/v1/data_sources/` instead of failing with a 400 error.
+- **`--data-source-id` global option** — Bypass auto-detection by specifying the data source ID explicitly on any command.
+- **`queryAllPages()` helper** — Paginated fetch with filter/sort/limit/onProgress, replacing 5 duplicate pagination loops across commands.
+- **`withErrorHandler()` utility** — Eliminates 37 identical try/catch blocks across 19 command files.
+
+### Changed
+
+- All 37 hardcoded `databases/${id}` call-sites migrated to resolver helpers (`getDatabaseSchema()`, `queryDatabase()`, `updateDatabase()`). Future API version migration only requires changes to `database-resolver.ts`.
+- `inspect workspace` now shows `[multi-source]` tag and data source IDs for multi-DS databases, with graceful handling when properties are unavailable.
+- Inline `PaginatedResponse` type casts replaced with canonical `PaginatedResponse<T>` from `types/notion.ts`.
+- `export database` now uses `queryAllPages()` instead of its own cursor loop.
+
 ### Fixed
 
 - `db query` now preserves multiple repeated filter groups passed via `--filter-prop` / `--filter-type` / `--filter-value` / `--filter-prop-type` instead of silently keeping only the last one. Multiple groups are sent as Notion compound filters (`{ and: [...] }`), and mismatched flag counts now fail with a clear error.
+- `--filter-prop-type` count is now validated against `--filter-prop` count to prevent silent positional shift.
+- Notion onboarding skill description YAML frontmatter fixed.
+
+## [0.7.0] - 2026-03-10
 
 ## [0.6.0] - 2026-03-07
 
