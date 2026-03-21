@@ -30,7 +30,7 @@ If the file is missing, suggest the user run the **notion-onboarding** skill fir
 
 1. **Load state** (above) or `notion inspect ws --compact` / `notion inspect ws --json` to discover databases
 2. **Understand schema** — `notion inspect context <db_id>` and `notion inspect schema <db_id> --llm`
-3. **Query** with `--json` or `--llm` only where the command supports it
+3. **Query deterministically first** — prefer `search --exact --db --first`, `db query --title`, or `--llm` over fuzzy workspace-wide search when you know the target DB
 4. **Write** with `--dry-run` first on bulk/batch ops, then confirm with user
 
 ## Core Commands
@@ -46,14 +46,21 @@ notion ai prompt <db_id>                        # DB-specific agent instructions
 
 ### Query
 ```bash
-notion search "keyword" --limit 10
-notion search "Exact Title" --exact --first --json         # deterministic lookup
-notion search "task" --db <db_id> --llm                    # filter by parent DB
-notion db query <db_id> --title "Known Page"               # exact title filter
+# Exact lookup in a known DB (deterministic — uses database query API)
+notion db query <db_id> --title "Known Page" --json
 notion db query <db_id> --limit 20 --llm                   # compact output
-notion find "overdue tasks unassigned" -d <db_id> --llm    # natural language
+
+# Fuzzy search (workspace-wide, best-effort — Notion may miss long titles)
+notion search "keyword" --limit 10
+notion search "keyword" --db <db_id> --llm                 # filter by parent DB
+notion search "short title" --exact --first --json         # best-effort exact match
+
+# Natural language
+notion find "overdue tasks unassigned" -d <db_id> --llm
 notion find "high priority" -d <db_id> --explain           # preview filter, don't run
 ```
+
+**For exact lookup by title in a known DB, always use `db query --title` — not `search --exact`.** Notion's search API is fuzzy and may miss pages with long or common-word titles.
 
 ### Read pages
 ```bash
@@ -101,7 +108,7 @@ notion validate check <db_id> --check-dates --check-stale 30
 
 | Flag | Use for |
 |------|---------|
-| `--llm` | Compact, structured output for agents (`find`, `batch`, `inspect schema/context`, `stats overview`, `relations backlinks`) |
+| `--llm` | Compact, structured output for agents (`search`, `db query`, `find`, `batch`, `inspect schema/context`, `stats overview`, `relations backlinks`) |
 | `--json` / `-j` | Raw JSON for parsing |
 | (default) | Human-readable |
 
@@ -131,8 +138,11 @@ notion page update <id> --prop "Owner:people=<user_id>" # people
 
 ## Rules
 
-- Property names and values are **case-sensitive** — always verify with `inspect context`
+- Property values are usually **case-sensitive** — verify exact status/select values with `inspect context`
+- Property names are matched more flexibly in `0.10.0` (`resolvePropertyName()` is case-insensitive and whitespace-tolerant), but still prefer the real schema labels for reliability
 - Title property name varies per DB (`"Name"`, `"Título"`, `"Task"` — check state or schema)
+- Prefer `db query --title "..."` or `search --db <id> --exact --first` when you know the DB; avoid fuzzy `search` for operational updates
+- Use `--clear-prop` instead of fake empty values like `Owner:people=` or `Tags=`
 - `--dry-run` before any bulk/batch write
 - Confirm with user before destructive bulk operations
 

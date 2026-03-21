@@ -154,8 +154,11 @@ notion search "project plan"
 notion search "meeting" --type page
 notion search "" --type database    # List all databases
 
-# Deterministic search (for agents)
-notion search "Known Title" --exact --first --json  # One result or exit 1
+# Exact lookup in a known database (deterministic)
+notion db query <db_id> --title "Known Page" --json
+
+# Filtered search (best-effort — Notion search is fuzzy)
+notion search "keyword" --db <db_id> --exact --first --json
 notion search "task" --db <db_id>                   # Filter by parent database
 
 # Get page info
