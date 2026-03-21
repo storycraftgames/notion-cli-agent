@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { fetchAllBlocks, getPageTitle, getDbTitle } from '../utils/notion-helpers.js';
 import { getDatabaseSchema, queryAllPages } from '../utils/database-resolver.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Block, Page, Database } from '../types/notion.js';
 
 // Clean block for duplication (remove IDs, etc.)
@@ -82,10 +83,9 @@ export function registerDuplicateCommand(program: Command): void {
     .option('--parent-type <type>', 'Parent type: page or database', 'database')
     .option('-t, --title <title>', 'New page title (default: "Copy of ...")')
     .option('--no-content', 'Copy only properties, not content blocks')
-    .action(async (pageId: string, options) => {
-      try {
+    .action(withErrorHandler(async (pageId: string, options) => {
         const client = getClient();
-        
+
         // Get source page
         console.log('Fetching source page...');
         const sourcePage = await client.get(`pages/${pageId}`) as Page;
@@ -159,11 +159,7 @@ export function registerDuplicateCommand(program: Command): void {
         console.log(`   ID: ${newPage.id}`);
         if (newPage.url) console.log(`   URL: ${newPage.url}`);
         if (blockCount > 0) console.log(`   Copied ${blockCount} blocks`);
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Clone database structure (schema only)
   duplicate
@@ -172,10 +168,9 @@ export function registerDuplicateCommand(program: Command): void {
     .description('Clone database structure (schema only, no data)')
     .requiredOption('--to <page_id>', 'Target parent page ID')
     .option('-t, --title <title>', 'New database title')
-    .action(async (databaseId: string, options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, options) => {
         const client = getClient();
-        
+
         // Get source database
         console.log('Fetching source database schema...');
         const sourceDb = await getDatabaseSchema(client, databaseId);
@@ -274,11 +269,7 @@ export function registerDuplicateCommand(program: Command): void {
         console.log(`   ID: ${newDb.id}`);
         if (newDb.url) console.log(`   URL: ${newDb.url}`);
         console.log(`   Properties: ${Object.keys(newProperties).length}`);
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Full database clone (structure + data)
   duplicate
@@ -290,10 +281,9 @@ export function registerDuplicateCommand(program: Command): void {
     .option('--content', 'Also copy page content (slower)')
     .option('--limit <number>', 'Max entries to copy')
     .option('--dry-run', 'Show what would be cloned')
-    .action(async (databaseId: string, options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, options) => {
         const client = getClient();
-        
+
         // Get source database
         console.log('Fetching source database...');
         const sourceDb = await getDatabaseSchema(client, databaseId);
@@ -409,9 +399,5 @@ export function registerDuplicateCommand(program: Command): void {
         console.log(`\n\n✅ Database cloned`);
         console.log(`   Entries: ${cloned} cloned${failed > 0 ? `, ${failed} failed` : ''}`);
         console.log(`   New database ID: ${newDb.id}`);
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }

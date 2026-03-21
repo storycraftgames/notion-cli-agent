@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { fetchAllBlocks, getPageTitle, getDbTitle, getDbDescription, getPropertyValue } from '../utils/notion-helpers.js';
 import { getDatabaseSchema, queryDatabase } from '../utils/database-resolver.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Block, Page, Database, PropertySchema } from '../types/notion.js';
 
 interface SelectOption {
@@ -72,10 +73,9 @@ export function registerAICommand(program: Command): void {
     .description('Generate a concise summary of a page')
     .option('--max-lines <number>', 'Max content lines to analyze', '50')
     .option('-j, --json', 'Output as JSON')
-    .action(async (pageId: string, options) => {
-      try {
+    .action(withErrorHandler(async (pageId: string, options) => {
         const client = getClient();
-        
+
         // Get page
         const page = await client.get(`pages/${pageId}`) as Page;
         const title = getPageTitle(page);
@@ -150,12 +150,7 @@ export function registerAICommand(program: Command): void {
         
         console.log('\n**Preview:**');
         console.log(contentLines.slice(0, 5).map(l => `  ${l}`).join('\n'));
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Extract structured data
   ai
@@ -163,8 +158,7 @@ export function registerAICommand(program: Command): void {
     .description('Extract structured data from page content')
     .requiredOption('--schema <fields>', 'Comma-separated field names to extract')
     .option('--from-props', 'Extract from properties only (faster)')
-    .action(async (pageId: string, options) => {
-      try {
+    .action(withErrorHandler(async (pageId: string, options) => {
         const client = getClient();
         const fields = options.schema.split(',').map((f: string) => f.trim().toLowerCase());
         
@@ -233,12 +227,7 @@ export function registerAICommand(program: Command): void {
         }
         
         console.log(JSON.stringify(extracted, null, 2));
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Generate agent prompt
   ai
@@ -246,10 +235,9 @@ export function registerAICommand(program: Command): void {
     .alias('agent-prompt')
     .description('Generate an optimal prompt for an AI agent to work with this database')
     .option('--examples <number>', 'Number of example entries', '2')
-    .action(async (databaseId: string, options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, options) => {
         const client = getClient();
-        
+
         // Get database
         const db = await getDatabaseSchema(client, databaseId);
         const title = getDbTitle(db);
@@ -373,19 +361,13 @@ export function registerAICommand(program: Command): void {
         
         console.log('- Use `notion inspect schema` for full property details');
         console.log('- Use `--dry-run` on bulk operations before executing');
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Suggest command
   ai
     .command('suggest <database_id> <description>')
     .description('Suggest the right command based on natural language')
-    .action(async (databaseId: string, description: string, _options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, description: string, _options) => {
         const client = getClient();
         const db = await getDatabaseSchema(client, databaseId);
         const lowerDesc = description.toLowerCase();
@@ -472,10 +454,5 @@ export function registerAICommand(program: Command): void {
           console.log(`notion export db ${databaseId} --vault ~/backup --folder notion-export`);
           console.log('```\n');
         }
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }

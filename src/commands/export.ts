@@ -10,7 +10,8 @@ import {
 } from '../utils/markdown.js';
 import { queryDatabase } from '../utils/database-resolver.js';
 import { blocksToMarkdownAsync } from '../utils/notion-helpers.js';
-import type { RichText, Block, Page } from '../types/notion.js';
+import { withErrorHandler } from '../utils/command-handler.js';
+import type { RichText, Block, Page, PaginatedResponse } from '../types/notion.js';
 
 function getPageTitle(page: Page): string {
   const props = page.properties;
@@ -170,42 +171,37 @@ export function registerExportCommand(program: Command): void {
     .option('--obsidian', 'Include Obsidian-compatible frontmatter')
     .option('--no-content', 'Export only frontmatter, no content')
     .option('--no-frontmatter', 'Export only content, no frontmatter')
-    .action(async (pageId: string, options) => {
-      try {
-        const client = getClient();
-        
-        // Fetch page
-        const page = await client.get(`pages/${pageId}`) as Page;
-        const title = getPageTitle(page);
-        
-        let output = '';
-        
-        // Add frontmatter
-        if (options.frontmatter !== false && options.obsidian) {
-          output += generateFrontmatter(page);
-        }
-        
-        // Add title
-        output += `# ${title}\n\n`;
-        
-        // Add content
-        if (options.content !== false) {
-          const content = await blocksToMarkdownAsync(client, pageId);
-          output += content;
-        }
-        
-        // Output
-        if (options.output) {
-          fs.writeFileSync(options.output, output);
-          console.log(`✅ Exported to ${options.output}`);
-        } else {
-          console.log(output);
-        }
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
+    .action(withErrorHandler(async (pageId: string, options) => {
+      const client = getClient();
+
+      // Fetch page
+      const page = await client.get(`pages/${pageId}`) as Page;
+      const title = getPageTitle(page);
+
+      let output = '';
+
+      // Add frontmatter
+      if (options.frontmatter !== false && options.obsidian) {
+        output += generateFrontmatter(page);
       }
-    });
+
+      // Add title
+      output += `# ${title}\n\n`;
+
+      // Add content
+      if (options.content !== false) {
+        const content = await blocksToMarkdownAsync(client, pageId);
+        output += content;
+      }
+
+      // Output
+      if (options.output) {
+        fs.writeFileSync(options.output, output);
+        console.log(`✅ Exported to ${options.output}`);
+      } else {
+        console.log(output);
+      }
+    }));
 
   // Export database to Obsidian vault
   exportCmd
@@ -217,9 +213,8 @@ export function registerExportCommand(program: Command): void {
     .option('--content', 'Also export page content (slower)')
     .option('--limit <number>', 'Max entries to export')
     .option('--filter <json>', 'Filter as JSON')
-    .action(async (databaseId: string, options) => {
-      try {
-        const client = getClient();
+    .action(withErrorHandler(async (databaseId: string, options) => {
+      const client = getClient();
         
         // Determine output folder
         const vaultPath = path.resolve(options.vault);
@@ -243,11 +238,7 @@ export function registerExportCommand(program: Command): void {
         do {
           if (cursor) body.start_cursor = cursor;
           
-          const result = await queryDatabase(client, databaseId, body) as {
-            results: Page[];
-            has_more: boolean;
-            next_cursor?: string;
-          };
+          const result = await queryDatabase<PaginatedResponse<Page>>(client, databaseId, body);
           
           for (const page of result.results) {
             const title = getPageTitle(page);
@@ -280,9 +271,5 @@ export function registerExportCommand(program: Command): void {
         } while (cursor);
         
         console.log(`\n✅ Exported ${exported} pages to ${outputFolder}`);
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }

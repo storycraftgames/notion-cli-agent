@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { fetchAllBlocks } from '../utils/notion-helpers.js';
 import { getDatabaseSchema } from '../utils/database-resolver.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Block, Page } from '../types/notion.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -116,8 +117,7 @@ export function registerTemplateCommand(program: Command): void {
     .requiredOption('-n, --name <name>', 'Template name')
     .option('-d, --description <text>', 'Template description')
     .option('--overwrite', 'Overwrite if template exists')
-    .action(async (pageId: string, options) => {
-      try {
+    .action(withErrorHandler(async (pageId: string, options) => {
         ensureTemplatesDir();
         
         const templatePath = path.join(TEMPLATES_DIR, `${options.name}.json`);
@@ -162,11 +162,7 @@ export function registerTemplateCommand(program: Command): void {
         
         console.log(`\n✅ Template saved: ${options.name}`);
         console.log(`   Location: ${templatePath}`);
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Use template
   template
@@ -176,8 +172,7 @@ export function registerTemplateCommand(program: Command): void {
     .option('--parent-type <type>', 'Parent type: page or database', 'database')
     .option('-t, --title <title>', 'Page title')
     .option('-p, --prop <key=value...>', 'Set property values')
-    .action(async (templateName: string, options) => {
-      try {
+    .action(withErrorHandler(async (templateName: string, options) => {
         ensureTemplatesDir();
         
         const templatePath = path.join(TEMPLATES_DIR, `${templateName}.json`);
@@ -270,14 +265,10 @@ export function registerTemplateCommand(program: Command): void {
         console.log(`\n✅ Page created from template "${templateName}"`);
         console.log(`   ID: ${page.id}`);
         console.log(`   URL: ${page.url}`);
-        
+
         // Note: Nested blocks would need additional API calls to add children
         // This is left as a future enhancement
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Delete template
   template

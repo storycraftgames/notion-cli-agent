@@ -6,6 +6,7 @@ import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
 import { getPageTitle } from '../utils/notion-helpers.js';
 import { getDatabaseSchema, queryDatabase } from '../utils/database-resolver.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Page, Database, PropertySchema, Block } from '../types/notion.js';
 
 export function registerRelationsCommand(program: Command): void {
@@ -21,12 +22,11 @@ export function registerRelationsCommand(program: Command): void {
     .description('Find pages that link to this page')
     .option('-j, --json', 'Output as JSON')
     .option('--llm', 'LLM-friendly output')
-    .action(async (pageId: string, options) => {
-      try {
-        const client = getClient();
-        
-        // Get the target page
-        const targetPage = await client.get(`pages/${pageId}`) as Page;
+    .action(withErrorHandler(async (pageId: string, options) => {
+      const client = getClient();
+
+      // Get the target page
+      const targetPage = await client.get(`pages/${pageId}`) as Page;
         const targetTitle = getPageTitle(targetPage);
         
         console.log(`🔍 Finding backlinks to: ${targetTitle}\n`);
@@ -181,12 +181,8 @@ export function registerRelationsCommand(program: Command): void {
             console.log(`   ... and ${mentionLinks.length - 10} more`);
           }
         }
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+
+    }));
 
   // Link pages
   relations
@@ -194,9 +190,8 @@ export function registerRelationsCommand(program: Command): void {
     .description('Create a relation between two pages')
     .requiredOption('-p, --property <name>', 'Relation property name')
     .option('--bidirectional', 'Also link target back to source')
-    .action(async (sourceId: string, targetId: string, options) => {
-      try {
-        const client = getClient();
+    .action(withErrorHandler(async (sourceId: string, targetId: string, options) => {
+      const client = getClient();
         
         // Get source page
         const sourcePage = await client.get(`pages/${sourceId}`) as Page;
@@ -261,12 +256,8 @@ export function registerRelationsCommand(program: Command): void {
             console.log(`⚠️ Could not create bidirectional link (property not found on target)`);
           }
         }
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+
+    }));
 
   // Unlink pages
   relations
@@ -274,9 +265,8 @@ export function registerRelationsCommand(program: Command): void {
     .description('Remove a relation between two pages')
     .requiredOption('-p, --property <name>', 'Relation property name')
     .option('--bidirectional', 'Also unlink target from source')
-    .action(async (sourceId: string, targetId: string, options) => {
-      try {
-        const client = getClient();
+    .action(withErrorHandler(async (sourceId: string, targetId: string, options) => {
+      const client = getClient();
         
         // Get source page
         const sourcePage = await client.get(`pages/${sourceId}`) as Page;
@@ -326,12 +316,8 @@ export function registerRelationsCommand(program: Command): void {
             console.log(`✅ Unlinked: ${targetTitle} ✕ ${sourceTitle} (bidirectional)`);
           }
         }
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+
+    }));
 
   // Show graph
   relations
@@ -339,9 +325,8 @@ export function registerRelationsCommand(program: Command): void {
     .description('Show relationship graph for a page')
     .option('--depth <number>', 'How many levels deep to traverse', '1')
     .option('--format <type>', 'Output format: text, dot, json', 'text')
-    .action(async (pageId: string, options) => {
-      try {
-        const client = getClient();
+    .action(withErrorHandler(async (pageId: string, options) => {
+      const client = getClient();
         const depth = parseInt(options.depth, 10);
         
         // Track visited pages
@@ -432,10 +417,6 @@ export function registerRelationsCommand(program: Command): void {
             }
           }
         }
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+
+    }));
 }

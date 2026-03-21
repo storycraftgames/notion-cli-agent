@@ -7,6 +7,7 @@ import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
 import { getDbTitle, getDbDescription } from '../utils/notion-helpers.js';
 import { getDatabaseSchema, queryDatabase } from '../utils/database-resolver.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Database, PropertySchema } from '../types/notion.js';
 
 interface SelectOption {
@@ -94,15 +95,14 @@ export function registerInspectCommand(program: Command): void {
     .option('-l, --limit <number>', 'Max databases to show', '20')
     .option('-j, --json', 'Output raw JSON')
     .option('--compact', 'Compact output (names only)')
-    .action(async (options) => {
-      try {
-        const client = getClient();
-        
-        // Search for all databases
-        const result = await client.post('search', {
-          filter: { property: 'object', value: 'database' },
-          page_size: parseInt(options.limit, 10),
-        }) as { results: DatabaseWithDataSources[] };
+    .action(withErrorHandler(async (options) => {
+      const client = getClient();
+
+      // Search for all databases
+      const result = await client.post('search', {
+        filter: { property: 'object', value: 'database' },
+        page_size: parseInt(options.limit, 10),
+      }) as { results: DatabaseWithDataSources[] };
 
         if (options.json) {
           console.log(formatOutput(result.results));
@@ -154,11 +154,7 @@ export function registerInspectCommand(program: Command): void {
             console.log('');
           }
         }
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Get detailed schema for a database
   inspect
@@ -166,20 +162,19 @@ export function registerInspectCommand(program: Command): void {
     .description('Get detailed schema for a database')
     .option('-j, --json', 'Output raw JSON')
     .option('--llm', 'Output optimized for LLM consumption')
-    .action(async (databaseId: string, options) => {
-      try {
-        const client = getClient();
-        const db = await getDatabaseSchema(client, databaseId);
+    .action(withErrorHandler(async (databaseId: string, options) => {
+      const client = getClient();
+      const db = await getDatabaseSchema(client, databaseId);
 
-        if (options.json) {
-          console.log(formatOutput(db));
-          return;
-        }
+      if (options.json) {
+        console.log(formatOutput(db));
+        return;
+      }
 
-        const title = getDbTitle(db);
-        const desc = getDbDescription(db);
+      const title = getDbTitle(db);
+      const desc = getDbDescription(db);
 
-        if (options.llm) {
+      if (options.llm) {
           // Compact LLM-friendly format
           console.log(`# Database: ${title}\n`);
           console.log(`ID: ${db.id}`);
@@ -268,20 +263,15 @@ export function registerInspectCommand(program: Command): void {
           
           console.log('');
         }
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Generate context for LLM
   inspect
     .command('context <database_id>')
     .description('Generate LLM-friendly context for a database')
     .option('--examples <number>', 'Number of example entries to include', '3')
-    .action(async (databaseId: string, options) => {
-      try {
-        const client = getClient();
+    .action(withErrorHandler(async (databaseId: string, options) => {
+      const client = getClient();
         
         // Get database schema
         const db = await getDatabaseSchema(client, databaseId);
@@ -396,10 +386,5 @@ export function registerInspectCommand(program: Command): void {
         console.log(`# Create new entry`);
         console.log(`notion page create --parent ${databaseId} --title "New Entry"`);
         console.log('```');
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }

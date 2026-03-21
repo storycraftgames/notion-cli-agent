@@ -8,6 +8,7 @@ import * as path from 'path';
 import { blocksToMarkdownSync } from '../utils/markdown.js';
 import { fetchAllBlocks, getPageTitle, getDbTitle } from '../utils/notion-helpers.js';
 import { getDatabaseSchema, queryAllPages } from '../utils/database-resolver.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Block, Page, Database } from '../types/notion.js';
 
 function sanitizeFilename(name: string): string {
@@ -43,8 +44,7 @@ export function registerBackupCommand(program: Command): void {
     .option('--format <type>', 'Output format: json or markdown', 'json')
     .option('--incremental', 'Only backup entries modified since last backup')
     .option('--limit <number>', 'Max entries to backup')
-    .action(async (databaseId: string, options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, options) => {
         const client = getClient();
         const outputDir = path.resolve(options.output);
         
@@ -173,12 +173,7 @@ export function registerBackupCommand(program: Command): void {
         if (options.incremental) {
           console.log(`   Mode: Incremental (since ${lastBackupTime?.toISOString() || 'beginning'})`);
         }
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }
 
 function generateMarkdown(page: Page, blocks?: Block[]): string {

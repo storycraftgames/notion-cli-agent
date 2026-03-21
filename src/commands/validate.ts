@@ -6,6 +6,7 @@ import { getClient } from '../client.js';
 import { getDatabaseSchema, queryDatabase, queryAllPages } from '../utils/database-resolver.js';
 import { formatOutput } from '../utils/format.js';
 import { getPageTitle, getDbTitle } from '../utils/notion-helpers.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Page, Database, PropertySchema } from '../types/notion.js';
 
 interface ValidationIssue {
@@ -72,11 +73,10 @@ export function registerValidateCommand(program: Command): void {
     .option('--check-stale <days>', 'Flag items not updated in N days')
     .option('-j, --json', 'Output as JSON')
     .option('--fix', 'Show fix suggestions')
-    .action(async (databaseId: string, options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, options) => {
         const client = getClient();
         const issues: ValidationIssue[] = [];
-        
+
         // Get database schema
         const db = await getDatabaseSchema(client, databaseId);
         const dbTitle = getDbTitle(db);
@@ -282,21 +282,15 @@ export function registerValidateCommand(program: Command): void {
         console.log(`   Errors:       ${Math.round(errorScore)}/100 (weight: 30%)`);
         console.log(`   Warnings:     ${Math.round(warningScore)}/100 (weight: 20%)`);
         console.log(`   Timeliness:   ${Math.round(timelinessScore)}/100 (weight: 20%)`);
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Quick lint
   validate
     .command('lint <database_id>')
     .description('Quick lint check for common issues')
-    .action(async (databaseId: string) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string) => {
         const client = getClient();
-        
+
         // Get database
         const db = await getDatabaseSchema(client, databaseId);
         const dbTitle = getDbTitle(db);
@@ -398,21 +392,15 @@ export function registerValidateCommand(program: Command): void {
         }
 
         console.log(`\nTotal issues: ${totalIssues}`);
-        
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Health check
   validate
     .command('health <database_id>')
     .description('Get a health score for the database')
-    .action(async (databaseId: string) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string) => {
         const client = getClient();
-        
+
         const db = await getDatabaseSchema(client, databaseId);
         const dbTitle = getDbTitle(db);
 
@@ -511,10 +499,5 @@ export function registerValidateCommand(program: Command): void {
             console.log(`  -> ${rec}`);
           }
         }
-
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }

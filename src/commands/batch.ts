@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { getClient, NotionClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
 import { getDatabaseSchema, queryDatabase, updateDatabase } from '../utils/database-resolver.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 
 interface BatchOperation {
   op: 'get' | 'create' | 'update' | 'delete' | 'query' | 'append';
@@ -153,8 +154,7 @@ export function registerBatchCommand(program: Command): void {
     .option('--sequential', 'Execute operations one at a time')
     .option('-c, --concurrency <number>', 'Max parallel operations (default: 3)', '3')
     .option('--llm', 'Output in LLM-friendly format')
-    .action(async (options) => {
-      try {
+    .action(withErrorHandler(async (options) => {
         let operations: BatchOperation[];
 
         if (options.file) {
@@ -224,9 +224,5 @@ export function registerBatchCommand(program: Command): void {
         if (failed > 0) {
           process.exit(1);
         }
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }

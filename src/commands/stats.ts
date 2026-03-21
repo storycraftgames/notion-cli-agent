@@ -6,6 +6,7 @@ import { getClient } from '../client.js';
 import { formatOutput } from '../utils/format.js';
 import { getDatabaseSchema, queryDatabase, queryAllPages } from '../utils/database-resolver.js';
 import { getDbTitle } from '../utils/notion-helpers.js';
+import { withErrorHandler } from '../utils/command-handler.js';
 import type { Page, Database, PropertySchema } from '../types/notion.js';
 
 interface SelectOption {
@@ -49,10 +50,9 @@ export function registerStatsCommand(program: Command): void {
     .description('Get statistics overview for a database')
     .option('-j, --json', 'Output as JSON')
     .option('--llm', 'LLM-friendly output')
-    .action(async (databaseId: string, options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, options) => {
         const client = getClient();
-        
+
         // Get database info
         const db = await getDatabaseSchema(client, databaseId);
         const title = getDbTitle(db);
@@ -195,11 +195,7 @@ export function registerStatsCommand(program: Command): void {
           const edited = editedByMonth[month] || 0;
           console.log(`  ${month}: ${created} created, ${edited} edited`);
         }
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 
   // Timeline view
   stats
@@ -207,10 +203,9 @@ export function registerStatsCommand(program: Command): void {
     .description('Show activity timeline for a database')
     .option('-d, --days <number>', 'Number of days to show', '14')
     .option('-j, --json', 'Output as JSON')
-    .action(async (databaseId: string, options) => {
-      try {
+    .action(withErrorHandler(async (databaseId: string, options) => {
         const client = getClient();
-        
+
         const days = parseInt(options.days, 10);
         const since = new Date();
         since.setDate(since.getDate() - days);
@@ -275,9 +270,5 @@ export function registerStatsCommand(program: Command): void {
         }
         
         console.log(`\nTotal: ${result.results.length} entries edited`);
-      } catch (error) {
-        console.error('Error:', (error as Error).message);
-        process.exit(1);
-      }
-    });
+    }));
 }
