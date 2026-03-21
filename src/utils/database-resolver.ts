@@ -33,6 +33,23 @@ export interface QueryAllOptions extends ResolverOptions {
   onProgress?: (fetched: number) => void;
 }
 
+// ─── Global data-source-id fallback ─────────────────────────────────────────
+
+let globalDataSourceId: string | undefined;
+
+/**
+ * Set the global data-source-id fallback from CLI's --data-source-id option.
+ * Called once from cli.ts preAction hook. Commands don't need to thread
+ * this option — the resolver picks it up automatically.
+ */
+export function setGlobalDataSourceId(id?: string): void {
+  globalDataSourceId = id;
+}
+
+function effectiveDataSourceId(explicit?: string): string | undefined {
+  return explicit ?? globalDataSourceId;
+}
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const MULTI_DS_ERROR_PATTERN = /multiple data sources/i;
@@ -135,7 +152,7 @@ export async function getDatabaseSchema(
   databaseId: string,
   opts?: ResolverOptions,
 ): Promise<Database> {
-  const resolved = await resolveDatabase(client, databaseId, opts?.dataSourceId);
+  const resolved = await resolveDatabase(client, databaseId, effectiveDataSourceId(opts?.dataSourceId));
   return resolved.schema;
 }
 
@@ -148,7 +165,7 @@ export async function queryDatabase<T = unknown>(
   body: Record<string, unknown> = {},
   opts?: ResolverOptions,
 ): Promise<T> {
-  const resolved = await resolveDatabase(client, databaseId, opts?.dataSourceId);
+  const resolved = await resolveDatabase(client, databaseId, effectiveDataSourceId(opts?.dataSourceId));
   return client.post<T>(resolved.queryPath, body);
 }
 
@@ -173,7 +190,7 @@ export async function updateDatabase<T = unknown>(
   body: Record<string, unknown>,
   opts?: ResolverOptions,
 ): Promise<T> {
-  const resolved = await resolveDatabase(client, databaseId, opts?.dataSourceId);
+  const resolved = await resolveDatabase(client, databaseId, effectiveDataSourceId(opts?.dataSourceId));
   return client.patch<T>(resolved.updatePath, body);
 }
 
@@ -188,7 +205,7 @@ export async function queryAllPages(
   databaseId: string,
   opts: QueryAllOptions = {},
 ): Promise<Page[]> {
-  const resolved = await resolveDatabase(client, databaseId, opts.dataSourceId);
+  const resolved = await resolveDatabase(client, databaseId, effectiveDataSourceId(opts.dataSourceId));
   const pages: Page[] = [];
   let cursor: string | undefined;
 

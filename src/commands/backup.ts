@@ -6,7 +6,7 @@ import { getClient } from '../client.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { blocksToMarkdownSync } from '../utils/markdown.js';
-import { fetchAllBlocks, getPageTitle } from '../utils/notion-helpers.js';
+import { fetchAllBlocks, getPageTitle, getDbTitle } from '../utils/notion-helpers.js';
 import { getDatabaseSchema, queryAllPages } from '../utils/database-resolver.js';
 import type { Block, Page, Database } from '../types/notion.js';
 
@@ -56,7 +56,7 @@ export function registerBackupCommand(program: Command): void {
         // Get database info
         console.log('Fetching database schema...');
         const db = await getDatabaseSchema(client, databaseId);
-        const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
+        const dbTitle = getDbTitle(db);
         
         // Save schema
         const schemaPath = path.join(outputDir, 'schema.json');

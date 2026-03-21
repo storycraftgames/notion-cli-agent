@@ -5,7 +5,7 @@ import { Command } from 'commander';
 import { getClient } from '../client.js';
 import { getDatabaseSchema, queryDatabase, queryAllPages } from '../utils/database-resolver.js';
 import { formatOutput } from '../utils/format.js';
-import { getPageTitle } from '../utils/notion-helpers.js';
+import { getPageTitle, getDbTitle } from '../utils/notion-helpers.js';
 import type { Page, Database, PropertySchema } from '../types/notion.js';
 
 interface ValidationIssue {
@@ -79,7 +79,7 @@ export function registerValidateCommand(program: Command): void {
         
         // Get database schema
         const db = await getDatabaseSchema(client, databaseId);
-        const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
+        const dbTitle = getDbTitle(db);
 
         console.log(`🔍 Validating database: ${dbTitle}\n`);
         
@@ -299,7 +299,7 @@ export function registerValidateCommand(program: Command): void {
         
         // Get database
         const db = await getDatabaseSchema(client, databaseId);
-        const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
+        const dbTitle = getDbTitle(db);
 
         console.log(`🔍 Linting: ${dbTitle}\n`);
         
@@ -414,7 +414,7 @@ export function registerValidateCommand(program: Command): void {
         const client = getClient();
         
         const db = await getDatabaseSchema(client, databaseId);
-        const dbTitle = db.title?.map(t => t.plain_text).join('') || 'Untitled';
+        const dbTitle = getDbTitle(db);
 
         // Query recent entries
         const result = await queryDatabase<{ results: Page[] }>(client, databaseId, {

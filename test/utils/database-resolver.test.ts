@@ -24,6 +24,7 @@ describe('DatabaseResolver', () => {
     };
     resolver = await import('../../src/utils/database-resolver');
     resolver.clearResolverCache();
+    resolver.setGlobalDataSourceId(undefined);
   });
 
   // ─── resolveDatabase ──────────────────────────────────────────────────────
@@ -469,6 +470,68 @@ describe('DatabaseResolver', () => {
         page_size: 100,
         start_cursor: 'cursor-xyz',
       });
+    });
+  });
+
+  // ─── Global data-source-id fallback ─────────────────────────────────────────
+
+  describe('setGlobalDataSourceId()', () => {
+    it('should use global data-source-id when no explicit option is provided', async () => {
+      mockClient.get.mockResolvedValue(mockDataSource);
+
+      resolver.setGlobalDataSourceId('ds-global');
+      const schema = await resolver.getDatabaseSchema(mockClient, 'any-db');
+
+      expect(mockClient.get).toHaveBeenCalledWith('data_sources/ds-global');
+    });
+
+    it('should prefer explicit dataSourceId over global', async () => {
+      mockClient.get.mockResolvedValue(mockDataSource);
+
+      resolver.setGlobalDataSourceId('ds-global');
+      const schema = await resolver.getDatabaseSchema(mockClient, 'any-db', { dataSourceId: 'ds-explicit' });
+
+      expect(mockClient.get).toHaveBeenCalledWith('data_sources/ds-explicit');
+    });
+
+    it('should not use global when cleared', async () => {
+      mockClient.get.mockResolvedValue(mockDatabase);
+
+      resolver.setGlobalDataSourceId('ds-global');
+      resolver.setGlobalDataSourceId(undefined);
+      await resolver.getDatabaseSchema(mockClient, 'db-123');
+
+      expect(mockClient.get).toHaveBeenCalledWith('databases/db-123');
+    });
+
+    it('should flow through to queryDatabase', async () => {
+      mockClient.get.mockResolvedValue(mockDataSource);
+      mockClient.post.mockResolvedValue(createPaginatedResult([mockPage]));
+
+      resolver.setGlobalDataSourceId('ds-global');
+      await resolver.queryDatabase(mockClient, 'any-db', { page_size: 10 });
+
+      expect(mockClient.post).toHaveBeenCalledWith('data_sources/ds-global/query', { page_size: 10 });
+    });
+
+    it('should flow through to queryAllPages', async () => {
+      mockClient.get.mockResolvedValue(mockDataSource);
+      mockClient.post.mockResolvedValue(createPaginatedResult([mockPage]));
+
+      resolver.setGlobalDataSourceId('ds-global');
+      await resolver.queryAllPages(mockClient, 'any-db');
+
+      expect(mockClient.post).toHaveBeenCalledWith('data_sources/ds-global/query', { page_size: 100 });
+    });
+
+    it('should flow through to updateDatabase', async () => {
+      mockClient.get.mockResolvedValue(mockDataSource);
+      mockClient.patch.mockResolvedValue(mockDataSource);
+
+      resolver.setGlobalDataSourceId('ds-global');
+      await resolver.updateDatabase(mockClient, 'any-db', { title: 'test' });
+
+      expect(mockClient.patch).toHaveBeenCalledWith('data_sources/ds-global', { title: 'test' });
     });
   });
 
