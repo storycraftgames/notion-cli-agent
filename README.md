@@ -67,8 +67,8 @@ skills/
 
 ### 🔄 Obsidian Integration
 - **Export to Obsidian** — Pages and databases with YAML frontmatter
-- **Import from Obsidian** — Sync your vault to Notion
-- **Bidirectional workflow** — Keep both systems in sync
+- **Import from Obsidian** — Import vault notes to Notion
+- **CSV & Markdown import** — Bulk import from files
 
 ### 📊 Analytics & Validation
 - **Statistics** — Database metrics, breakdowns by property
