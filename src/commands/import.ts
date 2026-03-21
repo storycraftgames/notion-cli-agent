@@ -92,8 +92,8 @@ function frontMatterToProperties(
   const skippedProps: string[] = [];
   
   for (const [key, value] of Object.entries(frontMatter)) {
-    // Skip notion-specific metadata
-    if (key === 'notion_id' || key === 'notion_url') continue;
+    // Skip notion-specific metadata and title (handled separately by caller)
+    if (key === 'notion_id' || key === 'notion_url' || key === 'title') continue;
     
     // Find matching property (case-insensitive, underscores to spaces)
     let propName: string | null = null;
