@@ -115,6 +115,16 @@ Types: `status` · `select` · `multi_select` · `number` · `date` · `checkbox
 
 See `references/filters.md` for full operator reference.
 
+## Property type hints for --prop
+
+Auto-detection treats plain strings as `select`. Use `Key:type=Value` to force a type:
+
+```bash
+notion page update <id> --prop "Status:status=Done"    # status, not select
+notion page update <id> --prop "Notes:rich_text=Text"   # rich_text, not select
+notion page update <id> --prop "Owner:people=<user_id>" # people
+```
+
 ## Rules
 
 - Property names and values are **case-sensitive** — always verify with `inspect context`
