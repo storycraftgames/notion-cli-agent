@@ -667,6 +667,64 @@ describe('Format Utilities', () => {
       });
     });
 
+    describe('Empty/not-empty operators', () => {
+      it('should create is_empty filter with boolean true (not user value)', () => {
+        const filter = parseFilter('Assignee', 'is_empty', '', 'people');
+        expect(filter).toEqual({
+          property: 'Assignee',
+          people: { is_empty: true },
+        });
+      });
+
+      it('should create is_not_empty filter with boolean true', () => {
+        const filter = parseFilter('Assignee', 'is_not_empty', '', 'people');
+        expect(filter).toEqual({
+          property: 'Assignee',
+          people: { is_not_empty: true },
+        });
+      });
+
+      it('should handle is_empty for select type', () => {
+        const filter = parseFilter('Priority', 'is_empty', '', 'select');
+        expect(filter).toEqual({
+          property: 'Priority',
+          select: { is_empty: true },
+        });
+      });
+
+      it('should handle is_not_empty for date type', () => {
+        const filter = parseFilter('Due', 'is_not_empty', '', 'date');
+        expect(filter).toEqual({
+          property: 'Due',
+          date: { is_not_empty: true },
+        });
+      });
+
+      it('should handle is_empty even if user passes a value (ignore it)', () => {
+        const filter = parseFilter('Tags', 'is_empty', 'ignored', 'multi_select');
+        expect(filter).toEqual({
+          property: 'Tags',
+          multi_select: { is_empty: true },
+        });
+      });
+
+      it('should handle valueless date operators (past_week, next_month)', () => {
+        const filter = parseFilter('Due', 'past_week', '', 'date');
+        expect(filter).toEqual({
+          property: 'Due',
+          date: { past_week: {} },
+        });
+      });
+
+      it('should handle next_month date operator', () => {
+        const filter = parseFilter('Due', 'next_month', '', 'date');
+        expect(filter).toEqual({
+          property: 'Due',
+          date: { next_month: {} },
+        });
+      });
+    });
+
     describe('Various filter types', () => {
       it('should support equals filter', () => {
         const filter = parseFilter('Status', 'equals', 'Done', 'status');
