@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Notion API version upgraded from `2022-06-28` to `2025-09-03`** — all database operations now route through `/v1/data_sources/` endpoints natively. No user-facing changes; the CLI abstracts the API version entirely.
+- Database resolver simplified by 72 lines (-23%) — removed legacy try-first fallback and version override hack.
+- Search filter `--type database` now maps to the API's `data_source` object type transparently.
+
 ## [0.8.2] - 2026-03-21
 
 ### Fixed
