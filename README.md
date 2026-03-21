@@ -661,6 +661,19 @@ When setting properties with `--prop`, the CLI auto-detects types:
 | Email | email | `--prop "Contact=a@b.com"` |
 | Comma-separated | multi_select | `--prop "Tags=bug,urgent"` |
 
+**Type hints** — Force a specific property type with `Key:type=Value`:
+
+```bash
+# Status properties (vs auto-detected select)
+notion page update <id> --prop "Status:status=Done"
+
+# Rich text instead of select
+notion page update <id> --prop "Notes:rich_text=Some notes"
+
+# People by user ID
+notion page update <id> --prop "Assignee:people=user-id-here"
+```
+
 For database queries with non-select properties:
 ```bash
 notion db query <db_id> \
