@@ -118,7 +118,7 @@ describe('Inspect Command', () => {
         ...mockDatabase,
         id: 'db-multi',
         title: [{ plain_text: 'Multi Source DB' }],
-        data_sources: [{ id: 'ds-aaa', name: 'Source A' }],
+        data_sources: [{ id: 'ds-aaa', name: 'Source A' }, { id: 'ds-bbb', name: 'Source B' }],
       };
       mockClient.post.mockResolvedValue(createPaginatedResult([multiSourceDb]));
 

@@ -12,6 +12,8 @@
  *   - getDbTitle(db)                             → string    (extract title from database)
  *   - getDbDescription(db)                       → string    (extract description from database)
  *   - getPropertyValue(prop)                     → string | null  (property → display string)
+ *   - getParentDatabaseId(parent)               → string | undefined (extract DB/DS id from parent)
+ *   - isParentDatabase(parent)                   → boolean (check if parent is a database/data_source)
  */
 
 import type { getClient } from '../client.js';
@@ -113,6 +115,23 @@ export function getDbTitle(db: Database): string {
  */
 export function getDbDescription(db: Database): string {
   return db.description?.map(t => t.plain_text).join('') || '';
+}
+
+// ─── Parent helpers (v2025-09-03 compat) ────────────────────────────────────
+
+/**
+ * Check if a page's parent is a database (or data_source on v2025-09-03).
+ */
+export function isParentDatabase(parent: Page['parent']): boolean {
+  return parent.type === 'database_id' || parent.type === 'data_source_id';
+}
+
+/**
+ * Extract the database ID from a page's parent, regardless of API version.
+ * On v2025-09-03, parent.type is 'data_source_id' but database_id is still present.
+ */
+export function getParentDatabaseId(parent: Page['parent']): string | undefined {
+  return parent.database_id ?? parent.data_source_id;
 }
 
 // ─── Property Value Extraction ──────────────────────────────────────────────

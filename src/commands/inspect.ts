@@ -27,7 +27,7 @@ interface DatabaseWithDataSources extends Database {
 }
 
 function isMultiDataSource(db: DatabaseWithDataSources): boolean {
-  return Array.isArray(db.data_sources) && db.data_sources.length > 0;
+  return Array.isArray(db.data_sources) && db.data_sources.length > 1;
 }
 
 function formatPropertyType(prop: PropertySchema): string {
@@ -63,7 +63,7 @@ function formatPropertyType(prop: PropertySchema): string {
     }
     
     case 'relation': {
-      const relatedDb = (data?.database_id as string) || 'unknown';
+      const relatedDb = (data?.data_source_id as string) || (data?.database_id as string) || 'unknown';
       return `relation → ${relatedDb.slice(0, 8)}...`;
     }
     
@@ -255,9 +255,10 @@ export function registerInspectCommand(program: Command): void {
           
           // Show relation info
           if (prop.type === 'relation') {
-            const data = prop.relation as { database_id?: string };
-            if (data?.database_id) {
-              console.log(`    Related database: ${data.database_id}`);
+            const data = prop.relation as { database_id?: string; data_source_id?: string };
+            const relId = data?.data_source_id ?? data?.database_id;
+            if (relId) {
+              console.log(`    Related database: ${relId}`);
             }
           }
           

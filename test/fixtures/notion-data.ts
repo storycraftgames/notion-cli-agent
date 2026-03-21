@@ -22,7 +22,8 @@ export const mockPage = {
   last_edited_by: mockUser,
   archived: false,
   parent: {
-    type: 'database_id',
+    type: 'data_source_id',
+    data_source_id: 'ds-456',
     database_id: 'db-123',
   },
   properties: {
