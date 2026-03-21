@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-03-21
+
+### Security
+
+- Pinned `flatted` >= 3.4.2 via `pnpm.overrides` to fix 2 high-severity advisories (unbounded recursion DoS + prototype pollution via `parse()`, via eslint > flat-cache)
+
+### Changed
+
+- Updated `vitest` 2.1.9 -> 4.1.0
+- Updated `@types/node` 22.19.8 -> 22.19.15
+- `pnpm audit`: 0 vulnerabilities
+
 ## [0.8.0] - 2026-03-21
 
 ### Added

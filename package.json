@@ -1,7 +1,7 @@
 {
   "name": "notion-cli-agent",
-  "version": "0.8.0",
-  "description": "The most powerful CLI for Notion \u2014 built for humans AND AI agents. Features smart queries, Obsidian sync, batch operations, validation, backups, and more.",
+  "version": "0.8.1",
+  "description": "The most powerful CLI for Notion — built for humans AND AI agents. Features smart queries, Obsidian sync, batch operations, validation, backups, and more.",
   "type": "module",
   "bin": {
     "notion": "dist/cli.js",
@@ -52,10 +52,10 @@
     "commander": "^12.1.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.19.15",
     "eslint": "^9.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=20"
@@ -64,7 +64,8 @@
     "overrides": {
       "minimatch": ">=3.1.4",
       "rollup": ">=4.59.0",
-      "ajv": ">=6.14.0"
+      "ajv": ">=6.14.0",
+      "flatted": ">=3.4.2"
     }
   }
 }
