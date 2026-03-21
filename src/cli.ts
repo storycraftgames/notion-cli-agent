@@ -16,9 +16,13 @@
  *   notion batch --file operations.json
  */
 
+import { createRequire } from 'module';
 import { Command } from 'commander';
 import { initClient } from './client.js';
 import { setGlobalDataSourceId } from './utils/database-resolver.js';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
 import { registerSearchCommand } from './commands/search.js';
 import { registerPagesCommand } from './commands/pages.js';
 import { registerDatabasesCommand } from './commands/databases.js';
@@ -45,7 +49,7 @@ const program = new Command();
 program
   .name('notion')
   .description('Full-featured CLI for Notion API - built for humans AND AI agents\n\n  💡 AI Agents: Run "notion quickstart" for a complete quick reference guide')
-  .version('0.4.2')
+  .version(version)
   .option('--token <token>', 'Notion API token (or set NOTION_TOKEN env var)')
   .option('--data-source-id <id>', 'Explicit data source ID for multi-data-source databases')
   .hook('preAction', (thisCommand) => {
