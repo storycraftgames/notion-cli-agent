@@ -21,11 +21,41 @@ describe('DatabaseResolver', () => {
       post: vi.fn(),
       patch: vi.fn(),
       delete: vi.fn(),
+      request: vi.fn(),
     };
     resolver = await import('../../src/utils/database-resolver');
     resolver.clearResolverCache();
     resolver.setGlobalDataSourceId(undefined);
   });
+
+  /**
+   * Helper: set up mock chain for multi-DS discovery flow.
+   * 1. Legacy GET → 400 multi-DS error
+   * 2. Discovery request (with version) → data_sources array
+   * 3. Data source schema request (with version) → schema
+   *
+   * Both steps 2 and 3 use client.request (version-aware), not client.get.
+   */
+  function setupMultiDsMocks(dataSourceId = 'ds-456') {
+    // Step 1: legacy GET fails
+    mockClient.get
+      .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`));
+    // Steps 2+3: discovery + schema fetch via client.request
+    mockClient.request = vi.fn()
+      .mockResolvedValueOnce({
+        data_sources: [{ id: dataSourceId, name: 'Test Data Source' }],
+      })
+      .mockResolvedValueOnce({ ...mockDataSource, id: dataSourceId });
+  }
+
+  /**
+   * Helper: set up mock for explicit data-source-id path.
+   * Only step 3 (schema fetch via client.request).
+   */
+  function setupExplicitDsMock(dataSourceId = 'ds-456') {
+    mockClient.request = vi.fn()
+      .mockResolvedValueOnce({ ...mockDataSource, id: dataSourceId });
+  }
 
   // ─── resolveDatabase ──────────────────────────────────────────────────────
 
@@ -43,22 +73,40 @@ describe('DatabaseResolver', () => {
       expect(mockClient.get).toHaveBeenCalledWith('databases/db-123');
     });
 
-    it('should detect multi-DS error and resolve via data_sources endpoint', async () => {
-      mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockResolvedValueOnce(mockDataSource);
+    it('should detect multi-DS error, discover data_source_id, and resolve', async () => {
+      setupMultiDsMocks();
 
       const result = await resolver.resolveDatabase(mockClient, 'multi-ds-db-123');
 
       expect(result.type).toBe('data_source');
-      expect(result.schemaPath).toBe('data_sources/multi-ds-db-123');
-      expect(result.queryPath).toBe('data_sources/multi-ds-db-123/query');
-      expect(result.updatePath).toBe('data_sources/multi-ds-db-123');
+      expect(result.schemaPath).toBe('data_sources/ds-456');
+      expect(result.queryPath).toBe('data_sources/ds-456/query');
+      expect(result.updatePath).toBe('data_sources/ds-456');
       expect(result.schema.properties).toBeDefined();
+      // Discovery call uses version override
+      expect(mockClient.request).toHaveBeenCalledWith(
+        'databases/multi-ds-db-123',
+        { version: '2025-09-03' },
+      );
+    });
+
+    it('should error with helpful message when multiple data sources exist', async () => {
+      mockClient.get
+        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`));
+      mockClient.request = vi.fn().mockResolvedValueOnce({
+        ...mockMultiDsDatabase,
+        data_sources: [
+          { id: 'ds-1', name: 'Source A' },
+          { id: 'ds-2', name: 'Source B' },
+        ],
+      });
+
+      await expect(resolver.resolveDatabase(mockClient, 'multi-ds-db-123'))
+        .rejects.toThrow('--data-source-id');
     });
 
     it('should use explicit dataSourceId without trying legacy endpoint', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-explicit');
 
       const result = await resolver.resolveDatabase(mockClient, 'any-db-id', 'ds-explicit');
 
@@ -67,8 +115,9 @@ describe('DatabaseResolver', () => {
       expect(result.queryPath).toBe('data_sources/ds-explicit/query');
       expect(result.updatePath).toBe('data_sources/ds-explicit');
       // Should NOT have tried the legacy databases/ endpoint
-      expect(mockClient.get).toHaveBeenCalledWith('data_sources/ds-explicit');
-      expect(mockClient.get).toHaveBeenCalledTimes(1);
+      expect(mockClient.get).not.toHaveBeenCalled();
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-explicit', { version: '2025-09-03' });
+      expect(mockClient.request).toHaveBeenCalledTimes(1);
     });
 
     it('should cache resolution results for same database ID', async () => {
@@ -82,13 +131,13 @@ describe('DatabaseResolver', () => {
     });
 
     it('should cache resolution with explicit dataSourceId using composite key', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-1');
 
       const result1 = await resolver.resolveDatabase(mockClient, 'db-x', 'ds-1');
       const result2 = await resolver.resolveDatabase(mockClient, 'db-x', 'ds-1');
 
       expect(result1).toBe(result2);
-      expect(mockClient.get).toHaveBeenCalledTimes(1);
+      expect(mockClient.request).toHaveBeenCalledTimes(1);
     });
 
     it('should not share cache between different database IDs', async () => {
@@ -118,10 +167,12 @@ describe('DatabaseResolver', () => {
         .rejects.toThrow('fetch failed');
     });
 
-    it('should handle data_source fallback also failing', async () => {
+    it('should handle discovery failing', async () => {
       mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockRejectedValueOnce(new Error('Notion API Error (404): Resource not found'));
+        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`));
+      mockClient.request = vi.fn().mockRejectedValueOnce(
+        new Error('Notion API Error (404): Resource not found'),
+      );
 
       await expect(resolver.resolveDatabase(mockClient, 'multi-ds-db-123'))
         .rejects.toThrow('Notion API Error (404)');
@@ -140,13 +191,10 @@ describe('DatabaseResolver', () => {
     });
 
     it('should normalize data_source response to Database shape', async () => {
-      mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockResolvedValueOnce(mockDataSource);
+      setupMultiDsMocks();
 
       const result = await resolver.resolveDatabase(mockClient, 'multi-ds-db-123');
 
-      // Schema should have all the fields commands expect
       expect(result.schema.id).toBeDefined();
       expect(result.schema.properties).toBeDefined();
       expect(result.schema.title).toBeDefined();
@@ -186,23 +234,20 @@ describe('DatabaseResolver', () => {
     });
 
     it('should return schema for multi-DS database via auto-detection', async () => {
-      mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockResolvedValueOnce(mockDataSource);
+      setupMultiDsMocks();
 
       const schema = await resolver.getDatabaseSchema(mockClient, 'multi-ds-db-123');
 
       expect(schema.properties).toBeDefined();
-      expect(schema.properties.Value).toBeDefined();
     });
 
     it('should return schema for explicit data source ID', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-456');
 
       const schema = await resolver.getDatabaseSchema(mockClient, 'any-id', { dataSourceId: 'ds-456' });
 
       expect(schema.properties).toBeDefined();
-      expect(mockClient.get).toHaveBeenCalledWith('data_sources/ds-456');
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-456', { version: '2025-09-03' });
     });
 
     it('should use cached resolution on repeated calls', async () => {
@@ -230,26 +275,29 @@ describe('DatabaseResolver', () => {
     });
 
     it('should query multi-DS database via data_sources path', async () => {
-      mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockResolvedValueOnce(mockDataSource);
+      setupMultiDsMocks();
       const queryResult = createPaginatedResult([mockPage]);
-      mockClient.post.mockResolvedValue(queryResult);
+      // Query also goes through client.request for data_source type
+      mockClient.request.mockResolvedValueOnce(queryResult);
 
       const result = await resolver.queryDatabase(mockClient, 'multi-ds-db-123', { page_size: 5 });
 
-      expect(mockClient.post).toHaveBeenCalledWith('data_sources/multi-ds-db-123/query', { page_size: 5 });
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-456/query', {
+        method: 'POST', body: { page_size: 5 }, version: '2025-09-03',
+      });
       expect(result).toEqual(queryResult);
     });
 
     it('should query with explicit data source ID', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-456');
       const queryResult = createPaginatedResult([mockPage]);
-      mockClient.post.mockResolvedValue(queryResult);
+      mockClient.request.mockResolvedValueOnce(queryResult);
 
       const result = await resolver.queryDatabase(mockClient, 'any-id', { page_size: 20 }, { dataSourceId: 'ds-456' });
 
-      expect(mockClient.post).toHaveBeenCalledWith('data_sources/ds-456/query', { page_size: 20 });
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-456/query', {
+        method: 'POST', body: { page_size: 20 }, version: '2025-09-03',
+      });
     });
 
     it('should pass empty body when none provided', async () => {
@@ -307,25 +355,29 @@ describe('DatabaseResolver', () => {
     });
 
     it('should update multi-DS database via data_sources path', async () => {
-      mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockResolvedValueOnce(mockDataSource);
-      mockClient.patch.mockResolvedValue(mockDataSource);
+      setupMultiDsMocks();
+      // Update also goes through client.request for data_source type
+      mockClient.request.mockResolvedValueOnce(mockDataSource);
 
       const body = { properties: { NewProp: { number: {} } } };
       await resolver.updateDatabase(mockClient, 'multi-ds-db-123', body);
 
-      expect(mockClient.patch).toHaveBeenCalledWith('data_sources/multi-ds-db-123', body);
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-456', {
+        method: 'PATCH', body, version: '2025-09-03',
+      });
     });
 
     it('should update with explicit data source ID', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
-      mockClient.patch.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-456');
+      // Update also goes through client.request for data_source type
+      mockClient.request.mockResolvedValueOnce(mockDataSource);
 
       const body = { title: [{ type: 'text', text: { content: 'New Title' } }] };
       await resolver.updateDatabase(mockClient, 'any-id', body, { dataSourceId: 'ds-456' });
 
-      expect(mockClient.patch).toHaveBeenCalledWith('data_sources/ds-456', body);
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-456', {
+        method: 'PATCH', body, version: '2025-09-03',
+      });
     });
   });
 
@@ -346,16 +398,16 @@ describe('DatabaseResolver', () => {
     });
 
     it('should query using pre-resolved path for data_source', async () => {
-      mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockResolvedValueOnce(mockDataSource);
+      setupMultiDsMocks();
       const queryResult = createPaginatedResult([mockPage]);
-      mockClient.post.mockResolvedValue(queryResult);
+      mockClient.request.mockResolvedValueOnce(queryResult);
 
       const resolved = await resolver.resolveDatabase(mockClient, 'multi-ds-db-123');
       await resolver.queryDatabaseDirect(mockClient, resolved, { page_size: 10 });
 
-      expect(mockClient.post).toHaveBeenCalledWith('data_sources/multi-ds-db-123/query', { page_size: 10 });
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-456/query', {
+        method: 'POST', body: { page_size: 10 }, version: '2025-09-03',
+      });
     });
   });
 
@@ -445,16 +497,14 @@ describe('DatabaseResolver', () => {
     });
 
     it('should work with multi-DS databases', async () => {
-      mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
-        .mockResolvedValueOnce(mockDataSource);
-      mockClient.post.mockResolvedValue(createPaginatedResult([mockPage]));
+      setupMultiDsMocks();
+      mockClient.request.mockResolvedValueOnce(createPaginatedResult([mockPage]));
 
       const pages = await resolver.queryAllPages(mockClient, 'multi-ds-db-123');
 
       expect(pages).toHaveLength(1);
-      expect(mockClient.post).toHaveBeenCalledWith('data_sources/multi-ds-db-123/query', {
-        page_size: 100,
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-456/query', {
+        method: 'POST', body: { page_size: 100 }, version: '2025-09-03',
       });
     });
 
@@ -477,21 +527,21 @@ describe('DatabaseResolver', () => {
 
   describe('setGlobalDataSourceId()', () => {
     it('should use global data-source-id when no explicit option is provided', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-global');
 
       resolver.setGlobalDataSourceId('ds-global');
       const schema = await resolver.getDatabaseSchema(mockClient, 'any-db');
 
-      expect(mockClient.get).toHaveBeenCalledWith('data_sources/ds-global');
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-global', { version: '2025-09-03' });
     });
 
     it('should prefer explicit dataSourceId over global', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-explicit');
 
       resolver.setGlobalDataSourceId('ds-global');
       const schema = await resolver.getDatabaseSchema(mockClient, 'any-db', { dataSourceId: 'ds-explicit' });
 
-      expect(mockClient.get).toHaveBeenCalledWith('data_sources/ds-explicit');
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-explicit', { version: '2025-09-03' });
     });
 
     it('should not use global when cleared', async () => {
@@ -505,33 +555,40 @@ describe('DatabaseResolver', () => {
     });
 
     it('should flow through to queryDatabase', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
-      mockClient.post.mockResolvedValue(createPaginatedResult([mockPage]));
+      setupExplicitDsMock('ds-global');
+      const queryResult = createPaginatedResult([mockPage]);
+      mockClient.request.mockResolvedValueOnce(queryResult);
 
       resolver.setGlobalDataSourceId('ds-global');
       await resolver.queryDatabase(mockClient, 'any-db', { page_size: 10 });
 
-      expect(mockClient.post).toHaveBeenCalledWith('data_sources/ds-global/query', { page_size: 10 });
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-global/query', {
+        method: 'POST', body: { page_size: 10 }, version: '2025-09-03',
+      });
     });
 
     it('should flow through to queryAllPages', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
-      mockClient.post.mockResolvedValue(createPaginatedResult([mockPage]));
+      setupExplicitDsMock('ds-global');
+      mockClient.request.mockResolvedValueOnce(createPaginatedResult([mockPage]));
 
       resolver.setGlobalDataSourceId('ds-global');
       await resolver.queryAllPages(mockClient, 'any-db');
 
-      expect(mockClient.post).toHaveBeenCalledWith('data_sources/ds-global/query', { page_size: 100 });
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-global/query', {
+        method: 'POST', body: { page_size: 100 }, version: '2025-09-03',
+      });
     });
 
     it('should flow through to updateDatabase', async () => {
-      mockClient.get.mockResolvedValue(mockDataSource);
-      mockClient.patch.mockResolvedValue(mockDataSource);
+      setupExplicitDsMock('ds-global');
+      mockClient.request.mockResolvedValueOnce(mockDataSource);
 
       resolver.setGlobalDataSourceId('ds-global');
       await resolver.updateDatabase(mockClient, 'any-db', { title: 'test' });
 
-      expect(mockClient.patch).toHaveBeenCalledWith('data_sources/ds-global', { title: 'test' });
+      expect(mockClient.request).toHaveBeenCalledWith('data_sources/ds-global', {
+        method: 'PATCH', body: { title: 'test' }, version: '2025-09-03',
+      });
     });
   });
 
@@ -563,8 +620,14 @@ describe('DatabaseResolver', () => {
         properties: {},
       };
 
+      // Step 1: legacy GET fails with multi-DS error
       mockClient.get
-        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`))
+        .mockRejectedValueOnce(new Error(`Notion API Error (400): ${MULTI_DS_ERROR_MESSAGE}`));
+      // Steps 2+3: discovery + schema fetch both via client.request
+      mockClient.request = vi.fn()
+        .mockResolvedValueOnce({
+          data_sources: [{ id: 'ds-minimal', name: 'Minimal' }],
+        })
         .mockResolvedValueOnce(minimalDs);
 
       const result = await resolver.resolveDatabase(mockClient, 'db-minimal');

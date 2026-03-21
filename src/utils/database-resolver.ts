@@ -53,6 +53,7 @@ function effectiveDataSourceId(explicit?: string): string | undefined {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const MULTI_DS_ERROR_PATTERN = /multiple data sources/i;
+const DISCOVERY_VERSION = '2025-09-03';
 
 // ─── Cache ──────────────────────────────────────────────────────────────────
 
@@ -86,12 +87,49 @@ async function resolveViaDataSource(
   client: NotionClient,
   dataSourceId: string,
 ): Promise<ResolvedDatabase> {
-  const ds = await client.get<Record<string, unknown>>(`data_sources/${dataSourceId}`);
+  // data_sources endpoints require Notion-Version >= 2025-09-03
+  const ds = await client.request<Record<string, unknown>>(
+    `data_sources/${dataSourceId}`,
+    { version: DISCOVERY_VERSION },
+  );
   return {
     type: 'data_source',
     ...buildPaths('data_sources', dataSourceId),
     schema: normalizeToDatabase(ds, dataSourceId),
   };
+}
+
+/**
+ * Discover the primary data_source_id for a multi-DS database.
+ * Uses Notion-Version: 2025-09-03 to get the data_sources array,
+ * then picks the first data source. If there are multiple, the user
+ * must specify --data-source-id explicitly.
+ */
+async function discoverDataSourceId(
+  client: NotionClient,
+  databaseId: string,
+): Promise<string> {
+  const db = await client.request<{ data_sources?: { id: string; name: string }[] }>(
+    `databases/${databaseId}`,
+    { version: DISCOVERY_VERSION },
+  );
+
+  const sources = db.data_sources;
+  if (!sources || sources.length === 0) {
+    throw new Error(
+      `Database ${databaseId} has no data sources. Use --data-source-id to specify one.`,
+    );
+  }
+
+  if (sources.length > 1) {
+    const list = sources.map(s => `  - ${s.id} (${s.name})`).join('\n');
+    throw new Error(
+      `Database ${databaseId} has ${sources.length} data sources:\n${list}\n` +
+      `Use --data-source-id <id> to specify which one.`,
+    );
+  }
+
+  return sources[0].id;
 }
 
 async function resolveViaLegacy(
@@ -107,8 +145,9 @@ async function resolveViaLegacy(
     };
   } catch (error) {
     if (!isMultiDataSourceError(error)) throw error;
-    // Fallback: try the same ID as a data_source_id
-    return resolveViaDataSource(client, databaseId);
+    // Discover the real data_source_id via version-upgraded GET
+    const dataSourceId = await discoverDataSourceId(client, databaseId);
+    return resolveViaDataSource(client, dataSourceId);
   }
 }
 
@@ -157,6 +196,23 @@ export async function getDatabaseSchema(
 }
 
 /**
+ * Post to a resolved path, using the right API version for data_sources.
+ */
+function postResolved<T>(client: NotionClient, resolved: ResolvedDatabase, path: string, body: Record<string, unknown>): Promise<T> {
+  if (resolved.type === 'data_source') {
+    return client.request<T>(path, { method: 'POST', body, version: DISCOVERY_VERSION });
+  }
+  return client.post<T>(path, body);
+}
+
+function patchResolved<T>(client: NotionClient, resolved: ResolvedDatabase, path: string, body: Record<string, unknown>): Promise<T> {
+  if (resolved.type === 'data_source') {
+    return client.request<T>(path, { method: 'PATCH', body, version: DISCOVERY_VERSION });
+  }
+  return client.patch<T>(path, body);
+}
+
+/**
  * Query a database. Resolves endpoint automatically.
  */
 export async function queryDatabase<T = unknown>(
@@ -166,7 +222,7 @@ export async function queryDatabase<T = unknown>(
   opts?: ResolverOptions,
 ): Promise<T> {
   const resolved = await resolveDatabase(client, databaseId, effectiveDataSourceId(opts?.dataSourceId));
-  return client.post<T>(resolved.queryPath, body);
+  return postResolved<T>(client, resolved, resolved.queryPath, body);
 }
 
 /**
@@ -178,7 +234,7 @@ export async function queryDatabaseDirect<T = unknown>(
   resolved: ResolvedDatabase,
   body: Record<string, unknown> = {},
 ): Promise<T> {
-  return client.post<T>(resolved.queryPath, body);
+  return postResolved<T>(client, resolved, resolved.queryPath, body);
 }
 
 /**
@@ -191,7 +247,7 @@ export async function updateDatabase<T = unknown>(
   opts?: ResolverOptions,
 ): Promise<T> {
   const resolved = await resolveDatabase(client, databaseId, effectiveDataSourceId(opts?.dataSourceId));
-  return client.patch<T>(resolved.updatePath, body);
+  return patchResolved<T>(client, resolved, resolved.updatePath, body);
 }
 
 // ─── Pagination helper ──────────────────────────────────────────────────────
