@@ -21,6 +21,7 @@
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
+    "prepare": "tsc",
     "prepublishOnly": "pnpm run build"
   },
   "keywords": [
