@@ -476,6 +476,65 @@ describe('markdownToBlocks()', () => {
       ]);
     });
   });
+
+  describe('tables', () => {
+    it('should parse a simple markdown table', () => {
+      const md = [
+        '| Name | Value |',
+        '|------|-------|',
+        '| foo  | bar   |',
+        '| baz  | qux   |',
+      ].join('\n');
+      const blocks = markdownToBlocks(md);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].type).toBe('table');
+      const table = blocks[0].table as { table_width: number; has_column_header: boolean; children: unknown[] };
+      expect(table.table_width).toBe(2);
+      expect(table.has_column_header).toBe(true);
+      expect(table.children).toHaveLength(3); // header + 2 data rows
+    });
+
+    it('should parse table with inline formatting', () => {
+      const md = [
+        '| Header |',
+        '|--------|',
+        '| **bold** |',
+      ].join('\n');
+      const blocks = markdownToBlocks(md);
+      expect(blocks).toHaveLength(1);
+      const table = blocks[0].table as { children: { table_row: { cells: NotionRichTextItem[][] } }[] };
+      const dataRow = table.children[1];
+      expect(simplify(dataRow.table_row.cells[0])).toEqual([
+        { text: 'bold', bold: true },
+      ]);
+    });
+
+    it('should handle table followed by other content', () => {
+      const md = [
+        '| A | B |',
+        '|---|---|',
+        '| 1 | 2 |',
+        '',
+        'Some paragraph after.',
+      ].join('\n');
+      const blocks = markdownToBlocks(md);
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0].type).toBe('table');
+      expect(blocks[1].type).toBe('paragraph');
+    });
+
+    it('should handle table without separator row', () => {
+      const md = [
+        '| A | B |',
+        '| 1 | 2 |',
+      ].join('\n');
+      const blocks = markdownToBlocks(md);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].type).toBe('table');
+      const table = blocks[0].table as { children: unknown[] };
+      expect(table.children).toHaveLength(2);
+    });
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -675,6 +734,29 @@ describe('getBlockContent()', () => {
     };
     expect(getBlockContent(block)).toBe('Hello **world**\n');
   });
+
+  it('should convert table_row to pipe-delimited markdown', () => {
+    const block: Block = {
+      id: '1',
+      type: 'table_row',
+      table_row: {
+        cells: [
+          [{ type: 'text', plain_text: 'foo' }],
+          [{ type: 'text', plain_text: 'bar' }],
+        ],
+      },
+    };
+    expect(getBlockContent(block)).toBe('| foo | bar |\n');
+  });
+
+  it('should return empty string for table block (content is in children)', () => {
+    const block: Block = {
+      id: '1',
+      type: 'table',
+      table: { table_width: 2, has_column_header: true },
+    };
+    expect(getBlockContent(block)).toBe('');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -733,6 +815,40 @@ describe('blocksToMarkdownSync()', () => {
     ];
     const result = blocksToMarkdownSync(blocks, 2);
     expect(result).toContain('    Indented');
+  });
+
+  it('should convert table block with children to markdown table', () => {
+    const blocks: Block[] = [
+      {
+        id: '1',
+        type: 'table',
+        table: { table_width: 2, has_column_header: true, has_row_header: false },
+        children: [
+          {
+            id: '2',
+            type: 'table_row',
+            table_row: {
+              cells: [
+                [{ type: 'text', plain_text: 'Name' }],
+                [{ type: 'text', plain_text: 'Value' }],
+              ],
+            },
+          },
+          {
+            id: '3',
+            type: 'table_row',
+            table_row: {
+              cells: [
+                [{ type: 'text', plain_text: 'foo' }],
+                [{ type: 'text', plain_text: 'bar' }],
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const result = blocksToMarkdownSync(blocks);
+    expect(result).toBe('| Name | Value |\n| --- | --- |\n| foo | bar |\n');
   });
 });
 

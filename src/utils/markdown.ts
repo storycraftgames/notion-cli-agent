@@ -277,6 +277,15 @@ export function getBlockContent(block: Block): string {
     case 'table_of_contents':
       return `[TOC]\n`;
 
+    case 'table':
+      return ''; // Table content comes from child table_row blocks
+
+    case 'table_row': {
+      const cells = (data as unknown as { cells: RichText[][] }).cells || [];
+      const cellTexts = cells.map(cell => richTextToMarkdown(cell));
+      return `| ${cellTexts.join(' | ')} |\n`;
+    }
+
     default:
       return `<!-- Unsupported block type: ${type} -->\n`;
   }
@@ -295,6 +304,32 @@ export function blocksToMarkdownSync(blocks: Block[], indent = 0): string {
   const indentStr = '  '.repeat(indent);
 
   for (const block of blocks) {
+    // Special handling for table blocks — emit markdown table with separator
+    if (block.type === 'table' && block.children && block.children.length > 0) {
+      const rows = block.children;
+      for (let r = 0; r < rows.length; r++) {
+        let rowContent = getBlockContent(rows[r]);
+        if (indent > 0) {
+          rowContent = rowContent
+            .split('\n')
+            .map(line => (line ? indentStr + line : ''))
+            .join('\n');
+        }
+        markdown += rowContent;
+        // After the first row (header), emit a separator
+        if (r === 0) {
+          const tableData = block.table as { table_width?: number } | undefined;
+          const colCount = tableData?.table_width || 1;
+          let sep = `| ${Array(colCount).fill('---').join(' | ')} |\n`;
+          if (indent > 0) {
+            sep = indentStr + sep;
+          }
+          markdown += sep;
+        }
+      }
+      continue;
+    }
+
     let content = getBlockContent(block);
 
     if (indent > 0) {
@@ -328,6 +363,7 @@ export function blocksToMarkdownSync(blocks: Block[], indent = 0): string {
  *   - Fenced code blocks (```)
  *   - Dividers (---)
  *   - Images (![alt](url))
+ *   - Tables (pipe-delimited | col1 | col2 |)
  *   - Paragraphs (everything else)
  *
  * Inline formatting within each line is parsed via parseInlineMarkdown().
@@ -364,6 +400,46 @@ export function markdownToBlocks(markdown: string): NotionBlock[] {
         },
       });
       i++; // Skip closing ```
+      continue;
+    }
+
+    // Markdown table (pipe-delimited rows)
+    if (/^\|(.+)\|$/.test(line.trim())) {
+      const tableRows: string[][] = [];
+      while (i < lines.length && /^\|(.+)\|$/.test(lines[i].trim())) {
+        const row = lines[i].trim();
+        // Skip separator rows like |---|---|
+        if (/^\|[\s\-:|]+\|$/.test(row)) {
+          i++;
+          continue;
+        }
+        const cells = row
+          .slice(1, -1) // Remove leading/trailing pipes
+          .split('|')
+          .map(c => c.trim());
+        tableRows.push(cells);
+        i++;
+      }
+      if (tableRows.length > 0) {
+        const tableWidth = tableRows[0].length;
+        const children: NotionBlock[] = tableRows.map(cells => ({
+          object: 'block' as const,
+          type: 'table_row',
+          table_row: {
+            cells: cells.map(cell => parseInlineMarkdown(cell)),
+          },
+        }));
+        blocks.push({
+          object: 'block',
+          type: 'table',
+          table: {
+            table_width: tableWidth,
+            has_column_header: true,
+            has_row_header: false,
+            children,
+          },
+        });
+      }
       continue;
     }
 
