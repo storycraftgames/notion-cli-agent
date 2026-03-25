@@ -473,7 +473,8 @@ export function registerImportCommand(program: Command): void {
     .command('markdown <file_path>')
     .description('Import a markdown file as page content')
     .requiredOption('--to <page_id>', 'Target page ID (appends content)')
-    .option('--replace', 'Replace existing content (deletes all blocks first)')
+    .option('--replace', 'Replace existing content atomically via native markdown API')
+    .option('--legacy', 'Force legacy block-based import (converts markdown to blocks)')
     .option('--dry-run', 'Show what would be imported')
     .action(withErrorHandler(async (filePath: string, options) => {
         const client = getClient();
@@ -481,12 +482,43 @@ export function registerImportCommand(program: Command): void {
         // Read file
         const content = fs.readFileSync(filePath, 'utf-8');
         const { body } = parseFrontMatter(content);
-        
-        // Convert to blocks
+
+        // Replace mode with native markdown API (default)
+        if (options.replace && !options.legacy) {
+          const sizeKB = Buffer.byteLength(body, 'utf-8') / 1024;
+          console.log(`Importing ${path.basename(filePath)} (${Math.round(sizeKB)}KB)`);
+
+          if (sizeKB > 490) {
+            console.error(`Warning: Content is ${Math.round(sizeKB)}KB — Notion API limit is 500KB. May fail.`);
+          }
+
+          if (options.dryRun) {
+            console.log(`Will replace page content with ${body.length} characters of markdown`);
+            console.log('\nPreview (first 500 chars):');
+            console.log(body.slice(0, 500));
+            if (body.length > 500) console.log('...');
+            console.log('\n🔍 Dry run - no changes made');
+            return;
+          }
+
+          await client.patch(
+            `pages/${options.to}/markdown`,
+            {
+              type: 'replace_content',
+              replace_content: {
+                new_str: body,
+              },
+            }
+          );
+          console.log(`\n✅ Replaced page content via markdown API`);
+          return;
+        }
+
+        // Legacy/append mode: convert to blocks
         const blocks = markdownToBlocks(body);
-        
+
         console.log(`Parsed ${blocks.length} blocks from ${path.basename(filePath)}`);
-        
+
         if (options.dryRun) {
           console.log('\nBlocks to create:');
           blocks.slice(0, 10).forEach((block, i) => {
@@ -499,25 +531,25 @@ export function registerImportCommand(program: Command): void {
           console.log('\n🔍 Dry run - no changes made');
           return;
         }
-        
-        // Delete existing blocks if replace mode
-        if (options.replace) {
-          console.log('Removing existing content...');
+
+        // Legacy replace: delete existing blocks one by one (deprecated path)
+        if (options.replace && options.legacy) {
+          console.log('Removing existing content (legacy mode)...');
           const existing = await client.get(`blocks/${options.to}/children`) as {
             results: { id: string }[];
           };
-          
+
           for (const block of existing.results) {
             await client.delete(`blocks/${block.id}`);
           }
         }
-        
+
         // Append blocks (Notion has a limit of 100 per request)
         const chunks = [];
         for (let i = 0; i < blocks.length; i += 100) {
           chunks.push(blocks.slice(i, i + 100));
         }
-        
+
         let added = 0;
         for (const chunk of chunks) {
           await client.patch(`blocks/${options.to}/children`, {
@@ -526,7 +558,7 @@ export function registerImportCommand(program: Command): void {
           added += chunk.length;
           process.stdout.write(`\r📥 Added ${added}/${blocks.length} blocks...`);
         }
-        
+
         console.log(`\n\n✅ Imported ${blocks.length} blocks to page`);
     }));
 }

@@ -98,14 +98,14 @@ export function registerExportCommand(program: Command): void {
     .description('Export a page to Markdown')
     .option('-o, --output <path>', 'Output file path (default: stdout)')
     .option('--obsidian', 'Include Obsidian-compatible frontmatter')
+    .option('--legacy', 'Use legacy block-fetching instead of native markdown API')
     .option('--no-content', 'Export only frontmatter, no content')
     .option('--no-frontmatter', 'Export only content, no frontmatter')
     .action(withErrorHandler(async (pageId: string, options) => {
       const client = getClient();
 
-      // Fetch page
+      // Fetch page metadata (needed for frontmatter and legacy title)
       const page = await client.get(`pages/${pageId}`) as Page;
-      const title = getPageTitleMarkdown(page);
 
       let output = '';
 
@@ -114,13 +114,31 @@ export function registerExportCommand(program: Command): void {
         output += generateFrontmatter(page);
       }
 
-      // Add title
-      output += `# ${title}\n\n`;
-
       // Add content
       if (options.content !== false) {
-        const content = await blocksToMarkdownAsync(client, pageId);
-        output += content;
+        if (options.legacy) {
+          // Legacy mode: fetch blocks and convert to markdown manually
+          const title = getPageTitleMarkdown(page);
+          output += `# ${title}\n\n`;
+          const content = await blocksToMarkdownAsync(client, pageId);
+          output += content;
+        } else {
+          // Native markdown API (default) — returns title as part of content
+          const response = await client.get<{ markdown: string; truncated: boolean; unknown_block_ids: string[] }>(
+            `pages/${pageId}/markdown`
+          );
+          output += response.markdown;
+          if (response.truncated) {
+            console.error('Warning: Page content was truncated (exceeds ~20,000 block limit)');
+          }
+          if (response.unknown_block_ids && response.unknown_block_ids.length > 0) {
+            console.error(`Warning: ${response.unknown_block_ids.length} block(s) could not be rendered`);
+          }
+        }
+      } else {
+        // No content — just add title
+        const title = getPageTitleMarkdown(page);
+        output += `# ${title}\n\n`;
       }
 
       // Output

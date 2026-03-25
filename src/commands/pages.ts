@@ -262,6 +262,7 @@ export function registerPagesCommand(program: Command): void {
     .command('read <page_id>')
     .description('Read page content as Markdown (outputs to stdout)')
     .option('-j, --json', 'Output raw JSON blocks instead of Markdown')
+    .option('--legacy', 'Use legacy block-fetching instead of native markdown API')
     .option('--no-title', 'Omit the page title heading')
     .option('-o, --output <path>', 'Write to file instead of stdout')
     .action(withErrorHandler(async (pageId: string, options) => {
@@ -282,16 +283,28 @@ export function registerPagesCommand(program: Command): void {
 
       let output = '';
 
-      // Include title by default
-      if (options.title !== false) {
-        const page = await client.get(`pages/${pageId}`) as Page;
-        const title = getPageTitle(page);
-        output += `# ${title}\n\n`;
+      if (options.legacy) {
+        // Legacy mode: fetch blocks and convert to markdown manually
+        if (options.title !== false) {
+          const page = await client.get(`pages/${pageId}`) as Page;
+          const title = getPageTitle(page);
+          output += `# ${title}\n\n`;
+        }
+        const content = await blocksToMarkdownAsync(client, pageId);
+        output += content;
+      } else {
+        // Native markdown API (default)
+        const response = await client.get<{ markdown: string; truncated: boolean; unknown_block_ids: string[] }>(
+          `pages/${pageId}/markdown`
+        );
+        output = response.markdown;
+        if (response.truncated) {
+          console.error('Warning: Page content was truncated (exceeds ~20,000 block limit)');
+        }
+        if (response.unknown_block_ids && response.unknown_block_ids.length > 0) {
+          console.error(`Warning: ${response.unknown_block_ids.length} block(s) could not be rendered`);
+        }
       }
-
-      // Convert blocks to markdown
-      const content = await blocksToMarkdownAsync(client, pageId);
-      output += content;
 
       if (options.output) {
         fs.writeFileSync(options.output, output);
@@ -306,7 +319,9 @@ export function registerPagesCommand(program: Command): void {
     .command('write <page_id>')
     .description('Write Markdown content to a page (from file or stdin)')
     .option('-f, --file <path>', 'Read Markdown from file')
-    .option('--replace', 'Replace existing content (deletes all blocks first). Default is append')
+    .option('--replace', 'Replace existing content atomically via native markdown API')
+    .option('--append', 'Append content (uses legacy block API)')
+    .option('--legacy', 'Force legacy block-based write (converts markdown to blocks)')
     .option('--dry-run', 'Show what would be written without making changes')
     .action(withErrorHandler(async (pageId: string, options) => {
       const client = getClient();
@@ -329,41 +344,56 @@ export function registerPagesCommand(program: Command): void {
           process.exit(1);
         }
 
-        // Convert to blocks
-        const blocks = markdownToBlocks(markdown);
-
         if (options.dryRun) {
-          console.log(`Parsed ${blocks.length} blocks:`);
-          blocks.slice(0, 15).forEach((block, i) => {
-            console.log(`  ${i + 1}. ${block.type}`);
-          });
-          if (blocks.length > 15) {
-            console.log(`  ... and ${blocks.length - 15} more`);
+          if (options.replace && !options.legacy) {
+            console.log(`Will replace page content with ${markdown.length} characters of markdown`);
+            console.log('\nPreview (first 500 chars):');
+            console.log(markdown.slice(0, 500));
+            if (markdown.length > 500) console.log('...');
+          } else {
+            const blocks = markdownToBlocks(markdown);
+            console.log(`Parsed ${blocks.length} blocks:`);
+            blocks.slice(0, 15).forEach((block, i) => {
+              console.log(`  ${i + 1}. ${block.type}`);
+            });
+            if (blocks.length > 15) {
+              console.log(`  ... and ${blocks.length - 15} more`);
+            }
           }
           console.log('\nDry run - no changes made');
           return;
         }
 
-        // Delete existing blocks if --replace
-        if (options.replace) {
+        // Replace mode: use native markdown API (atomic, no block deletion)
+        if (options.replace && !options.legacy) {
+          const response = await client.patch<{ markdown: string }>(
+            `pages/${pageId}/markdown`,
+            {
+              type: 'replace_content',
+              replace_content: {
+                new_str: markdown,
+              },
+            }
+          );
+          console.error(`✅ Replaced page content via markdown API`);
+          return;
+        }
+
+        // Legacy/append mode: convert to blocks
+        const blocks = markdownToBlocks(markdown);
+
+        // Legacy replace: delete existing blocks first (deprecated path)
+        if (options.replace && options.legacy) {
           const existing = await fetchAllBlocks(client, pageId);
           if (existing.length > 0) {
             console.error(
-              `Warning: --replace will permanently delete ${existing.length} existing block(s). ` +
-              `This operation is not atomic — if the subsequent write fails, deleted content cannot be recovered automatically.`
+              `Warning: legacy --replace will delete ${existing.length} block(s) one by one. ` +
+              `Consider using --replace without --legacy for atomic replacement.`
             );
-            // Keep a reference for error recovery attempt
-            const backup = existing.map(b => b.id);
-            try {
-              for (const block of existing) {
-                await client.delete(`blocks/${block.id}`);
-              }
-              console.error(`Removed ${existing.length} existing blocks`);
-            } catch (deleteError) {
-              console.error(`Error during block deletion: ${(deleteError as Error).message}`);
-              console.error(`Partial deletion may have occurred. Block IDs that were targeted:\n${backup.join('\n')}`);
-              process.exit(1);
+            for (const block of existing) {
+              await client.delete(`blocks/${block.id}`);
             }
+            console.error(`Removed ${existing.length} existing blocks`);
           }
         }
 
@@ -526,6 +556,50 @@ export function registerPagesCommand(program: Command): void {
         } else {
           console.log(`Done: ${summary.join(', ')} block(s)`);
         }
+    }));
+
+  // Find and replace text in a page via native markdown API
+  pages
+    .command('find-replace <page_id>')
+    .description('Find and replace text in a page using the native markdown API')
+    .requiredOption('--old <text>', 'Text to find in the page')
+    .requiredOption('--new <text>', 'Replacement text')
+    .option('--all', 'Replace all matches (default: first match only)')
+    .option('--dry-run', 'Preview what would be changed without making changes')
+    .option('-j, --json', 'Output raw JSON response')
+    .action(withErrorHandler(async (pageId: string, options) => {
+      const client = getClient();
+
+      if (options.dryRun) {
+        console.log('Find-replace plan:');
+        console.log(`  Find: "${options.old}"`);
+        console.log(`  Replace: "${options.new}"`);
+        console.log(`  Mode: ${options.all ? 'all matches' : 'first match only'}`);
+        console.log('\nDry run - no changes made');
+        return;
+      }
+
+      const response = await client.patch<{ markdown: string; truncated: boolean }>(
+        `pages/${pageId}/markdown`,
+        {
+          type: 'update_content',
+          update_content: {
+            content_updates: [
+              {
+                old_str: options.old,
+                new_str: options.new,
+                replace_all_matches: options.all || false,
+              },
+            ],
+          },
+        }
+      );
+
+      if (options.json) {
+        console.log(formatOutput(response));
+      } else {
+        console.log(`✅ Replaced "${options.old}" → "${options.new}"${options.all ? ' (all matches)' : ''}`);
+      }
     }));
 }
 
