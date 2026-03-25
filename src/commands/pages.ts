@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { getClient } from '../client.js';
 import { formatOutput, formatPageTitle, parseProperties } from '../utils/format.js';
 import { markdownToBlocks } from '../utils/markdown.js';
+import { chunkMarkdown } from '../utils/markdown-chunker.js';
 import { blocksToMarkdownAsync, fetchAllBlocks, getPageTitle, isParentDatabase, getParentDatabaseId, resolvePropertyName, buildClearPayload, buildTrashPayload, buildBlockPosition } from '../utils/notion-helpers.js';
 import { getDatabaseSchema } from '../utils/database-resolver.js';
 import { withErrorHandler } from '../utils/command-handler.js';
@@ -58,6 +59,7 @@ export function registerPagesCommand(program: Command): void {
     .option('--title-prop <name>', 'Name of title property (auto-detected if not set)')
     .option('-p, --prop <key=value...>', 'Set property (can be used multiple times)')
     .option('-c, --content <text>', 'Initial page content (paragraph)')
+    .option('--content-file <path>', 'Initial page content from a markdown file (uses native markdown API with chunking)')
     .option('--icon <emoji>', 'Set page icon (emoji character, e.g. 📝)')
     .option('-j, --json', 'Output raw JSON')
     .action(withErrorHandler(async (options) => {
@@ -68,11 +70,11 @@ export function registerPagesCommand(program: Command): void {
           : { database_id: options.parent };
 
         const properties: Record<string, unknown> = {};
-        
+
         // Handle title - auto-detect title property name from database schema
         if (options.title) {
           let titlePropName = options.titleProp;
-          
+
           // If not specified and parent is database, fetch schema to find title property
           if (!titlePropName && options.parentType === 'database') {
             try {
@@ -90,7 +92,7 @@ export function registerPagesCommand(program: Command): void {
               // Fall back to common defaults
             }
           }
-          
+
           // Use detected name or fall back based on parent type
           // Non-DB pages (page/workspace parent) use 'title'; DB pages default to 'Name'
           titlePropName = titlePropName || (options.parentType === 'page' ? 'title' : 'Name');
@@ -111,7 +113,7 @@ export function registerPagesCommand(program: Command): void {
           body.icon = { type: 'emoji', emoji: options.icon };
         }
 
-        // Add initial content if provided
+        // Add initial content if provided (inline text only)
         if (options.content) {
           body.children = [{
             object: 'block',
@@ -123,13 +125,55 @@ export function registerPagesCommand(program: Command): void {
         }
 
         const page = await client.post('pages', body);
+        const pageId = (page as { id: string }).id;
 
         if (options.json) {
           console.log(formatOutput(page));
         } else {
           console.log('✅ Page created');
-          console.log('ID:', (page as { id: string }).id);
+          console.log('ID:', pageId);
           console.log('URL:', (page as { url: string }).url);
+        }
+
+        // Write markdown content file after page creation (supports chunking for large files)
+        if (options.contentFile) {
+          if (!fs.existsSync(options.contentFile)) {
+            console.error(`Error: Content file not found: ${options.contentFile}`);
+            process.exit(1);
+          }
+          const markdown = fs.readFileSync(options.contentFile, 'utf-8');
+          const chunks = chunkMarkdown(markdown);
+
+          if (chunks.length > 1) {
+            console.error(`Content file exceeds 400KB — sending in ${chunks.length} chunks`);
+          }
+
+          // Chunk 1: replace_content (page is empty, so this sets initial content)
+          await client.patch(
+            `pages/${pageId}/markdown`,
+            {
+              type: 'replace_content',
+              replace_content: {
+                new_str: chunks[0],
+              },
+            }
+          );
+
+          // Chunks 2+: insert_content (appends to end)
+          for (let i = 1; i < chunks.length; i++) {
+            process.stderr.write(`\rSending chunk ${i + 1}/${chunks.length}...`);
+            await client.patch(
+              `pages/${pageId}/markdown`,
+              {
+                type: 'insert_content',
+                insert_content: {
+                  content: chunks[i],
+                },
+              }
+            );
+          }
+
+          console.error(`Written content from ${options.contentFile}${chunks.length > 1 ? ` (${chunks.length} chunks)` : ''}`);
         }
     }));
 
@@ -366,16 +410,38 @@ export function registerPagesCommand(program: Command): void {
 
         // Replace mode: use native markdown API (atomic, no block deletion)
         if (options.replace && !options.legacy) {
-          const response = await client.patch<{ markdown: string }>(
+          const chunks = chunkMarkdown(markdown);
+
+          if (chunks.length > 1) {
+            console.error(`Content exceeds 400KB — sending in ${chunks.length} chunks`);
+          }
+
+          // Chunk 1: replace_content
+          await client.patch(
             `pages/${pageId}/markdown`,
             {
               type: 'replace_content',
               replace_content: {
-                new_str: markdown,
+                new_str: chunks[0],
               },
             }
           );
-          console.error(`✅ Replaced page content via markdown API`);
+
+          // Chunks 2+: insert_content (appends to end)
+          for (let i = 1; i < chunks.length; i++) {
+            process.stderr.write(`\rSending chunk ${i + 1}/${chunks.length}...`);
+            await client.patch(
+              `pages/${pageId}/markdown`,
+              {
+                type: 'insert_content',
+                insert_content: {
+                  content: chunks[i],
+                },
+              }
+            );
+          }
+
+          console.error(`✅ Replaced page content via markdown API${chunks.length > 1 ? ` (${chunks.length} chunks)` : ''}`);
           return;
         }
 

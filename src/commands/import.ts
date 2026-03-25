@@ -6,6 +6,7 @@ import { getClient } from '../client.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { markdownToBlocks } from '../utils/markdown.js';
+import { chunkMarkdown } from '../utils/markdown-chunker.js';
 import { getDatabaseSchema } from '../utils/database-resolver.js';
 import { withErrorHandler } from '../utils/command-handler.js';
 import type { Database, PropertySchema } from '../types/notion.js';
@@ -488,12 +489,17 @@ export function registerImportCommand(program: Command): void {
           const sizeKB = Buffer.byteLength(body, 'utf-8') / 1024;
           console.log(`Importing ${path.basename(filePath)} (${Math.round(sizeKB)}KB)`);
 
-          if (sizeKB > 490) {
-            console.error(`Warning: Content is ${Math.round(sizeKB)}KB — Notion API limit is 500KB. May fail.`);
-          }
+          const chunks = chunkMarkdown(body);
 
           if (options.dryRun) {
             console.log(`Will replace page content with ${body.length} characters of markdown`);
+            if (chunks.length > 1) {
+              console.log(`Content will be sent in ${chunks.length} chunks:`);
+              chunks.forEach((chunk, i) => {
+                const kb = Math.round(Buffer.byteLength(chunk, 'utf-8') / 1024);
+                console.log(`  Chunk ${i + 1}: ${kb}KB`);
+              });
+            }
             console.log('\nPreview (first 500 chars):');
             console.log(body.slice(0, 500));
             if (body.length > 500) console.log('...');
@@ -501,16 +507,36 @@ export function registerImportCommand(program: Command): void {
             return;
           }
 
+          // Chunk 1: replace_content
           await client.patch(
             `pages/${options.to}/markdown`,
             {
               type: 'replace_content',
               replace_content: {
-                new_str: body,
+                new_str: chunks[0],
               },
             }
           );
-          console.log(`\n✅ Replaced page content via markdown API`);
+
+          // Chunks 2+: insert_content (appends to end)
+          for (let i = 1; i < chunks.length; i++) {
+            process.stdout.write(`\r📥 Sending chunk ${i + 1}/${chunks.length}...`);
+            await client.patch(
+              `pages/${options.to}/markdown`,
+              {
+                type: 'insert_content',
+                insert_content: {
+                  content: chunks[i],
+                },
+              }
+            );
+          }
+
+          if (chunks.length > 1) {
+            console.log(`\n✅ Replaced page content via markdown API (${chunks.length} chunks)`);
+          } else {
+            console.log(`\n✅ Replaced page content via markdown API`);
+          }
           return;
         }
 
