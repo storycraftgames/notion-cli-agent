@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`view` command** (`create`, `list`, `get`, `delete`) on the Views API. `view create --page` places a linked, filtered view of a database inside another page; `--relation Prop=<page_id>` is a shortcut for "relation contains this page".
+- **Property specs** for `db create -p` and `db update --add-prop`: `Name:select=A|B|C` (also `multi_select`, `status`), and `Name:relation=<database_id>[,dual[=Synced Name]]`, resolved to the target's data source. `--add-prop` is now repeatable.
+
+### Fixed
+
+- `db create` sent properties at the top level, which API `2025-09-03`+ ignores, so every `-p` was silently dropped. They now go in `initial_data_source.properties`. A `title` spec replaces the default `Name`.
+
 ## [0.11.0] - 2026-03-22
 
 ### Changed

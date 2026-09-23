@@ -492,6 +492,40 @@ backups/
 
 ---
 
+## 🗂️ Database Schemas & Views
+
+### Properties when creating or updating a database
+
+`db create -p` and `db update --add-prop` (both repeatable) take a property spec:
+
+```bash
+notion db create --parent <page_id> -t "Releases"   -p "Version:title"   -p "Status:select=Planning|In QA|Released"   -p "Release date:date"
+
+# Relations point at another database; add ,dual for a two-way relation
+notion db create --parent <page_id> -t "Release Issues"   -p "Priority:select=P0|P1|P2"   -p "Release:relation=<releases_db_id>,dual=Issues"
+
+notion db update <db_id> --add-prop "Owner:people" --add-prop "QA Run:relation=<qa_db_id>"
+```
+
+A `title` spec replaces the default `Name` title property.
+
+### Linked views
+
+Put a filtered view of one database inside another page — e.g. each release page showing only its own issues from a shared Issues database:
+
+```bash
+notion view create --database <issues_db_id> --page <release_page_id>   --after <block_id> --name "1.43 Issues" --relation "Release=<release_page_id>"
+```
+
+Without `--page`, the view is added as a new tab on the database. Filters also take `--filter <json>` or the same `--filter-prop/--filter-type/--filter-value/--filter-prop-type` flags as `db query`; several are ANDed.
+
+```bash
+notion view list --database <db_id>          # views on a database
+notion view list --data-source-id <ds_id>    # every view of a data source, linked ones included
+notion view get <view_id>
+notion view delete <view_id>
+```
+
 ## 🔗 Relations & Backlinks
 
 ### Find Backlinks
@@ -699,6 +733,7 @@ notion db query <db_id> \
 | **Search** | `search` |
 | **Pages** | `page get`, `page create`, `page update`, `page archive` |
 | **Databases** | `db get`, `db query`, `db create`, `db update` |
+| **Views** | `view create`, `view list`, `view get`, `view delete` |
 | **Blocks** | `block get`, `block list`, `block append`, `block update`, `block delete` |
 | **Comments** | `comment list`, `comment get`, `comment create` |
 | **Users** | `user me`, `user list`, `user get` |

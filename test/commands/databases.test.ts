@@ -419,4 +419,87 @@ describe('Databases Command', () => {
       ).rejects.toThrow();
     });
   });
+
+  describe('database create', () => {
+    it('puts properties in initial_data_source with a default Name title', async () => {
+      mockClient.post.mockResolvedValue({ id: 'new-db', url: 'u' });
+
+      await program.parseAsync([
+        'node', 'test', 'database', 'create', '--parent', 'page-1', '-t', 'Issues',
+        '-p', 'Due:date', '-p', 'Priority:select=P0|P1|P2',
+      ]);
+
+      expect(mockClient.post).toHaveBeenCalledWith('databases', {
+        parent: { type: 'page_id', page_id: 'page-1' },
+        title: [{ type: 'text', text: { content: 'Issues' } }],
+        initial_data_source: {
+          properties: {
+            Name: { title: {} },
+            Due: { date: {} },
+            Priority: { select: { options: [{ name: 'P0' }, { name: 'P1' }, { name: 'P2' }] } },
+          },
+        },
+      });
+    });
+
+    it('lets a named title property replace Name', async () => {
+      mockClient.post.mockResolvedValue({ id: 'new-db', url: 'u' });
+
+      await program.parseAsync(['node', 'test', 'database', 'create', '--parent', 'p', '-t', 'Releases', '-p', 'Version:title']);
+
+      expect(mockClient.post.mock.calls[0][1].initial_data_source.properties).toEqual({ Version: { title: {} } });
+    });
+
+    it('resolves a relation target database to its data source', async () => {
+      setupDatabaseResolution(mockClient);
+      mockClient.post.mockResolvedValue({ id: 'new-db', url: 'u' });
+
+      await program.parseAsync([
+        'node', 'test', 'database', 'create', '--parent', 'p', '-t', 'Issues',
+        '-p', 'Release:relation=db-123,dual=Issues',
+      ]);
+
+      expect(mockClient.get).toHaveBeenCalledWith('databases/db-123');
+      expect(mockClient.post.mock.calls[0][1].initial_data_source.properties.Release).toEqual({
+        relation: { data_source_id: 'ds-456', type: 'dual_property', dual_property: { synced_property_name: 'Issues' } },
+      });
+    });
+
+    it('makes a one-way relation without dual', async () => {
+      setupDatabaseResolution(mockClient);
+      mockClient.post.mockResolvedValue({ id: 'new-db', url: 'u' });
+
+      await program.parseAsync(['node', 'test', 'database', 'create', '--parent', 'p', '-t', 'X', '-p', 'Run:relation=db-123']);
+
+      expect(mockClient.post.mock.calls[0][1].initial_data_source.properties.Run).toEqual({
+        relation: { data_source_id: 'ds-456', type: 'single_property', single_property: {} },
+      });
+    });
+
+    it('rejects a relation with no target', async () => {
+      await expect(
+        program.parseAsync(['node', 'test', 'database', 'create', '--parent', 'p', '-t', 'X', '-p', 'Run:relation'])
+      ).rejects.toThrow('process.exit(1)');
+      expect(mockClient.post).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('database update --add-prop', () => {
+    it('adds several properties, a relation among them', async () => {
+      setupDatabaseResolution(mockClient);
+      mockClient.patch.mockResolvedValue({});
+
+      await program.parseAsync([
+        'node', 'test', 'database', 'update', 'db-123',
+        '--add-prop', 'Owner:people', '--add-prop', 'Parent:relation=db-123',
+      ]);
+
+      expect(mockClient.patch).toHaveBeenCalledWith('data_sources/ds-456', {
+        properties: {
+          Owner: { people: {} },
+          Parent: { relation: { data_source_id: 'ds-456', type: 'single_property', single_property: {} } },
+        },
+      });
+    });
+  });
 });

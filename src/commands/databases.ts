@@ -7,6 +7,7 @@ import { formatOutput, formatDatabaseTitle, parseFilter } from '../utils/format.
 import { getDatabaseSchema, queryDatabase, updateDatabase } from '../utils/database-resolver.js';
 import { withErrorHandler } from '../utils/command-handler.js';
 import { getPageTitle } from '../utils/notion-helpers.js';
+import { parsePropertySpecs } from '../utils/property-spec.js';
 import type { Database, PaginatedResponse, Page } from '../types/notion.js';
 
 export function registerDatabasesCommand(program: Command): void {
@@ -145,29 +146,27 @@ export function registerDatabasesCommand(program: Command): void {
     .requiredOption('--parent <page_id>', 'Parent page ID')
     .requiredOption('-t, --title <title>', 'Database title')
     .option('--inline', 'Create as inline database')
-    .option('-p, --property <name:type...>', 'Add property (e.g., Status:select, Date:date)')
+    .option(
+      '-p, --property <spec...>',
+      'Add property: Name:type, Name:select=A|B|C, Name:relation=<database_id>[,dual[=Name]]. ' +
+      'Give a title property (e.g. Version:title) to replace the default "Name".',
+    )
     .option('-j, --json', 'Output raw JSON')
     .action(withErrorHandler(async (options) => {
       const client = getClient();
 
-      const properties: Record<string, { type?: string; title?: object; [key: string]: unknown }> = {
-        Name: { title: {} }, // Default title property
-      };
+      const { properties: specified, parsed } = await parsePropertySpecs(client, options.property ?? []);
+      // Every database needs exactly one title property; "Name" unless the caller named their own.
+      const properties: Record<string, unknown> = parsed.some(p => p.type === 'title')
+        ? specified
+        : { Name: { title: {} }, ...specified };
 
-      // Parse additional properties
-      if (options.property) {
-        for (const prop of options.property) {
-          const [name, type] = prop.split(':');
-          if (name && type) {
-            properties[name] = { [type]: {} };
-          }
-        }
-      }
-
+      // Since API 2025-09-03 the schema lives on the database's first data source, so the
+      // properties go in initial_data_source; top-level properties are ignored.
       const body: Record<string, unknown> = {
-        parent: { page_id: options.parent },
+        parent: { type: 'page_id', page_id: options.parent },
         title: [{ type: 'text', text: { content: options.title } }],
-        properties,
+        initial_data_source: { properties },
       };
 
       if (options.inline) {
@@ -190,7 +189,12 @@ export function registerDatabasesCommand(program: Command): void {
     .command('update <database_id>')
     .description('Update database properties')
     .option('-t, --title <title>', 'New title')
-    .option('--add-prop <name:type>', 'Add a property')
+    .option(
+      '--add-prop <spec>',
+      'Add a property (repeatable): Name:type, Name:select=A|B|C, Name:relation=<database_id>[,dual[=Name]]',
+      (v: string, a: string[]) => [...a, v],
+      [] as string[],
+    )
     .option('--remove-prop <name>', 'Remove a property')
     .option('-j, --json', 'Output raw JSON')
     .action(withErrorHandler(async (databaseId: string, options) => {
@@ -204,11 +208,8 @@ export function registerDatabasesCommand(program: Command): void {
 
       const properties: Record<string, unknown> = {};
 
-      if (options.addProp) {
-        const [name, type] = options.addProp.split(':');
-        if (name && type) {
-          properties[name] = { [type]: {} };
-        }
+      if (options.addProp.length > 0) {
+        Object.assign(properties, (await parsePropertySpecs(client, options.addProp)).properties);
       }
 
       if (options.removeProp) {
